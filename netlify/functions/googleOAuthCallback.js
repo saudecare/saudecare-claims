@@ -12,6 +12,7 @@ exports.handler = async function (event) {
   const { code, state, error } = event.queryStringParameters || {};
 
   if (error) {
+    console.error('Google devolveu um erro antes da troca de tokens:', error);
     return { statusCode: 302, headers: { Location: `${appUrl}?calendarConnected=0` } };
   }
   if (!code || !state) {
@@ -33,10 +34,11 @@ exports.handler = async function (event) {
     });
     const tokenData = await tokenRes.json();
 
-    if (!tokenData.refresh_token) {
-      // Sem refresh_token — normalmente porque já tinha autorizado antes
-      // sem "prompt=consent". A pessoa precisa de revogar o acesso em
-      // myaccount.google.com/permissions e tentar ligar de novo.
+    if (!tokenRes.ok || !tokenData.refresh_token) {
+      // Regista SEMPRE a resposta completa do Google quando algo falha,
+      // para conseguirmos ver a causa real no log do Netlify
+      // (ex: invalid_grant, redirect_uri_mismatch, invalid_client, etc.)
+      console.error('Troca de tokens falhou ou sem refresh_token. Resposta do Google:', JSON.stringify(tokenData));
       return { statusCode: 302, headers: { Location: `${appUrl}?calendarConnected=0&reason=norefresh` } };
     }
 
@@ -51,7 +53,7 @@ exports.handler = async function (event) {
 
     return { statusCode: 302, headers: { Location: `${appUrl}?calendarConnected=1` } };
   } catch (err) {
-    console.error(err);
+    console.error('Erro inesperado na função googleOAuthCallback:', err);
     return { statusCode: 302, headers: { Location: `${appUrl}?calendarConnected=0` } };
   }
 };
