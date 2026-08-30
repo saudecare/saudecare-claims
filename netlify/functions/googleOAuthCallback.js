@@ -57,3 +57,4 @@ exports.handler = async function (event) {
     return { statusCode: 302, headers: { Location: `${appUrl}?calendarConnected=0` } };
   }
 };
+adicionar logs de erro
