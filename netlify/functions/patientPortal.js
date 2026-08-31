@@ -11,6 +11,11 @@ const cors = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// Esta função é a ÚNICA forma de o paciente aceder aos seus dados — nunca
+// fala diretamente com o Firestore (não tem conta/login). Usa o Admin SDK,
+// por isso não está sujeita às regras de segurança normais: a validação
+// do "token" (o código único do link) é feita aqui, à mão, antes de
+// devolver ou aceitar qualquer coisa.
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' };
   if (event.httpMethod !== 'POST') {
@@ -37,11 +42,12 @@ exports.handler = async function (event) {
       const cleanText = (text || '').trim().slice(0, 2000);
       if (!cleanText) return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Mensagem vazia.' }) };
       await patientRef.collection('messages').add({
-        sender: 'patient', text: cleanText, createdAt: admin.firestore.FieldValue.serverTimestamp()
+        sender: 'patient', text: cleanText, readByProfessional: false, createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
       return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true }) };
     }
 
+    // Ação por omissão: devolver os dados do portal.
     const tenantSnap = await tenantRef.get();
     const tenant = tenantSnap.data() || {};
 
@@ -68,6 +74,7 @@ exports.handler = async function (event) {
         patientName: patient.fullName || '',
         businessName: tenant.businessName || 'SaúdeCare',
         primaryColor: tenant?.branding?.primaryColor || '#1a2b26',
+        onlineConsult: tenant?.onlineConsult || { tool: 'jitsi' },
         upcoming: upcoming.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         past: past.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         reports: reports.map(r => ({ ...r, generatedAt: toIso(r.generatedAt) })),
