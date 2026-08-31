@@ -38,6 +38,10 @@ exports.handler = async function (event) {
     }
     const patient = patientSnap.data();
 
+    if (patient.portalRevoked) {
+      return { statusCode: 403, headers: cors, body: JSON.stringify({ error: 'O acesso a este portal foi revogado. Peça um novo link ao profissional.' }) };
+    }
+
     if (action === 'sendMessage') {
       const cleanText = (text || '').trim().slice(0, 2000);
       if (!cleanText) return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Mensagem vazia.' }) };
@@ -48,6 +52,10 @@ exports.handler = async function (event) {
     }
 
     // Ação por omissão: devolver os dados do portal.
+    if (!patient.portalFirstAccessedAt) {
+      await patientRef.update({ portalFirstAccessedAt: admin.firestore.FieldValue.serverTimestamp() });
+    }
+
     const tenantSnap = await tenantRef.get();
     const tenant = tenantSnap.data() || {};
 
