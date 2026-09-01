@@ -1,9 +1,8 @@
 const admin = require('firebase-admin');
 
 if (!admin.apps.length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+    credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)),
   });
 }
 
@@ -41,7 +40,6 @@ exports.handler = async function (event) {
 
     const { tenantId, action, googleEventId, summary, description, location, startISO, endISO } = JSON.parse(event.body || '{}');
 
-    // Só permite sincronizar dados do PRÓPRIO consultório de quem chama.
     if (decoded.tenantId !== tenantId) {
       return { statusCode: 403, headers: cors, body: JSON.stringify({ error: 'Sem permissão.' }) };
     }
@@ -49,8 +47,6 @@ exports.handler = async function (event) {
     const tenantSnap = await admin.firestore().doc(`tenants/${tenantId}`).get();
     const refreshToken = tenantSnap.data()?.googleCalendar?.refreshToken;
     if (!refreshToken) {
-      // Subscritor ainda não ligou o Google Calendar — não é um erro,
-      // simplesmente não há nada para sincronizar.
       return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, skipped: 'not_connected' }) };
     }
 
@@ -63,10 +59,17 @@ exports.handler = async function (event) {
 
     if (action === 'delete') {
       if (googleEventId) {
-        await fetch(`${base}/${googleEventId}`, {
+        const delRes = await fetch(`${base}/${googleEventId}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${accessToken}` },
         });
+        // 404/410 significa que já não existe no Google (ex: apagado à mão
+        // por lá) — nesse caso o objetivo já está cumprido, não é erro.
+        if (!delRes.ok && delRes.status !== 404 && delRes.status !== 410) {
+          const errBody = await delRes.text().catch(() => '');
+          console.error('Falha ao apagar evento no Google Calendar:', delRes.status, errBody);
+          return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: false, error: 'A Google recusou apagar o evento (sessão pode ter expirado).' }) };
+        }
       }
       return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true }) };
     }
