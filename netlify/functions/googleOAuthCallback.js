@@ -7,15 +7,33 @@ if (!admin.apps.length) {
   });
 }
 
+// Domínios onde a app pode legitimamente estar a correr — protege contra
+// alguém usar este redirecionamento para outro sítio qualquer.
+const ALLOWED_APP_HOSTS = ['saudecare.github.io', 'vindora.pt', 'www.vindora.pt', 'app.vindora.pt'];
+const FALLBACK_APP_URL = 'https://saudecare.github.io/Saudecare-app-/saudecare-core.html';
+
+function resolveAppUrl(state){
+  const [, encodedReturnUrl] = (state || '').split('::');
+  if (!encodedReturnUrl) return FALLBACK_APP_URL;
+  try {
+    const returnUrl = decodeURIComponent(encodedReturnUrl);
+    const host = new URL(returnUrl).hostname;
+    return ALLOWED_APP_HOSTS.includes(host) ? returnUrl : FALLBACK_APP_URL;
+  } catch (e) {
+    return FALLBACK_APP_URL;
+  }
+}
+
 exports.handler = async function (event) {
-  const appUrl = 'https://saudecare.github.io/Saudecare-app-/saudecare-core.html';
   const { code, state, error } = event.queryStringParameters || {};
+  const appUrl = resolveAppUrl(state);
+  const tenantIdFromState = (state || '').split('::')[0];
 
   if (error) {
     console.error('Google devolveu um erro antes da troca de tokens:', error);
     return { statusCode: 302, headers: { Location: `${appUrl}?calendarConnected=0` } };
   }
-  if (!code || !state) {
+  if (!code || !tenantIdFromState){
     return { statusCode: 400, body: 'Pedido inválido — falta o código ou o identificador do consultório.' };
   }
 
@@ -44,7 +62,7 @@ exports.handler = async function (event) {
 
     // Guarda o refresh token no documento do subscritor (via Admin SDK,
     // que não está sujeito às regras normais do Firestore).
-    await admin.firestore().doc(`tenants/${state}`).update({
+    await admin.firestore().doc(`tenants/${tenantIdFromState}`).update({
       googleCalendar: {
         refreshToken: tokenData.refresh_token,
         connectedAt: admin.firestore.FieldValue.serverTimestamp(),
