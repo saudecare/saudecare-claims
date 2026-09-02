@@ -70,6 +70,9 @@ exports.handler = async function (event) {
     const reportsSnap = await patientRef.collection('reports').orderBy('generatedAt', 'desc').limit(10).get();
     const reports = reportsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+    const healingSnap = await patientRef.collection('healingProtocols').orderBy('generatedAt', 'desc').limit(5).get();
+    const healingProtocols = healingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
     const messagesSnap = await patientRef.collection('messages').orderBy('createdAt', 'asc').limit(200).get();
     const messages = messagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -86,6 +89,7 @@ exports.handler = async function (event) {
         upcoming: upcoming.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         past: past.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         reports: reports.map(r => ({ ...r, generatedAt: toIso(r.generatedAt) })),
+        healingProtocols: healingProtocols.map(h => ({ ...h, generatedAt: toIso(h.generatedAt) })),
         messages: messages.map(m => ({ ...m, createdAt: toIso(m.createdAt) }))
       })
     };
