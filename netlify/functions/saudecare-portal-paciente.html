@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal do Paciente</title>
+<style>
+  :root{ --primary:#1a2b26; }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f6f8f7;color:#1a2b26;margin:0;padding:0 0 40px;}
+  header{background:var(--primary);color:#fff;padding:20px;text-align:center;}
+  header h1{margin:0 0 4px;font-size:1.3rem;}
+  header p{margin:0;opacity:.85;font-size:.9rem;}
+  main{max-width:520px;margin:0 auto;padding:16px;}
+  .card{background:#fff;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .card h2{margin:0 0 10px;font-size:1.05rem;color:var(--primary);}
+  .muted{color:#6b7a75;font-size:.85rem;}
+  .appt{background:#f6f8f7;border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+  .appt strong{display:block;}
+  .btn{display:inline-block;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:.95rem;cursor:pointer;text-decoration:none;text-align:center;}
+  .btn-block{display:block;width:100%;margin-top:8px;}
+  .crisis{background:#fdecea;border:1px solid #f3c1bc;border-radius:10px;padding:12px 14px;font-size:.85rem;line-height:1.5;color:#7a2b23;}
+  .crisis strong{display:block;margin-bottom:4px;}
+  #msgs{max-height:280px;overflow-y:auto;background:#f6f8f7;border-radius:10px;padding:10px;margin-bottom:8px;}
+  .msg{margin-bottom:8px;max-width:80%;padding:8px 12px;border-radius:12px;font-size:.9rem;line-height:1.4;}
+  .msg.me{background:var(--primary);color:#fff;margin-left:auto;border-bottom-right-radius:2px;}
+  .msg.them{background:#e9f0ee;border-bottom-left-radius:2px;}
+  .msgtime{font-size:.7rem;opacity:.6;margin-top:2px;}
+  .inputrow{display:flex;gap:6px;}
+  .inputrow input{flex:1;padding:9px 10px;border:1px solid #ccc;border-radius:8px;font-size:.9rem;}
+  .loading, .errorbox{text-align:center;padding:40px 20px;color:#6b7a75;}
+  .scale-row{display:flex;gap:8px;flex-wrap:wrap;}
+  .scale-btn{width:42px;height:42px;border-radius:50%;border:2px solid #e0e0e0;background:#fff;font-size:1.1rem;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6b7a75;user-select:none;}
+  .scale-btn.selected{border-color:var(--primary);background:var(--primary);color:#fff;}
+  .scale-label{font-size:.8rem;color:#6b7a75;margin:2px 0 6px;}
+  .checkin-entry{background:#f6f8f7;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:.85rem;}
+  .checkin-entry .cvals{display:flex;gap:10px;margin:4px 0;font-size:.85rem;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="hBusiness">Portal do Paciente</h1>
+  <p id="hPatient"></p>
+</header>
+
+<main id="mainContent">
+  <div class="loading">A carregar…</div>
+</main>
+
+<script>
+const FUNCTION_URL = 'https://effortless-entremet-7de9ef.netlify.app/.netlify/functions/patientPortal';
+const params = new URLSearchParams(window.location.search);
+const tenantId = params.get('t');
+const patientId = params.get('p');
+const token = params.get('k');
+
+function escapeHtml(s){
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function callPortal(action, extra){
+  const res = await fetch(FUNCTION_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tenantId, patientId, token, action, ...extra })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.error || 'Erro desconhecido');
+  return data;
+}
+
+function formatDateTime(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-PT', { weekday:'short', day:'2-digit', month:'2-digit' }) + ' às ' +
+    d.toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit' });
+}
+
+function renderMessages(messages){
+  const box = document.getElementById('msgs');
+  if (!box) return;
+  box.innerHTML = messages.length ? messages.map(m => `
+    <div class="msg ${m.sender === 'patient' ? 'me' : 'them'}">
+      ${escapeHtml(m.text)}
+      <div class="msgtime">${formatDateTime(m.createdAt)}</div>
+    </div>`).join('') : '<p class="muted" style="text-align:center;">Ainda sem mensagens.</p>';
+  box.scrollTop = box.scrollHeight;
+}
+
+function toggleReport(id){
+  const el = document.getElementById('report_' + id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// ── Diário de Bem-Estar ───────────────────────────────────────────────
+const SCALE_LABELS = ['Muito baixo', 'Baixo', 'Médio', 'Bom', 'Muito bom'];
+const MOOD_ICONS = ['😔','😕','😐','🙂','😄'];
+const SLEEP_ICONS = ['😩','😪','😐','🙂','😴'];
+const ENERGY_ICONS = ['🪫','🔋','🔋','🔋','⚡'];
+const checkinState = { mood: null, sleepQuality: null, energyLevel: null };
+
+function buildScale(containerId, key, icons){
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = [1,2,3,4,5].map(n => `<div class="scale-btn" onclick="selectScale('${containerId}','${key}',${n})">${icons[n-1]}</div>`).join('');
+}
+
+function selectScale(containerId, key, val){
+  checkinState[key] = checkinState[key] === val ? null : val;
+  const el = document.getElementById(containerId);
+  [...el.children].forEach((btn, i) => btn.classList.toggle('selected', (i+1) === checkinState[key]));
+}
+
+function renderCheckinHistory(checkins){
+  const box = document.getElementById('checkinHistory');
+  if (!box) return;
+  if (!checkins || !checkins.length){
+    box.innerHTML = '<p class="muted">Ainda sem registos — o primeiro fica aqui assim que guardar.</p>';
+    return;
+  }
+  box.innerHTML = checkins.map(c => {
+    const parts = [];
+    if (c.mood) parts.push(`${MOOD_ICONS[c.mood-1]} Humor`);
+    if (c.sleepQuality) parts.push(`${SLEEP_ICONS[c.sleepQuality-1]} Sono`);
+    if (c.energyLevel) parts.push(`${ENERGY_ICONS[c.energyLevel-1]} Energia`);
+    return `<div class="checkin-entry">
+      <strong>${formatDateTime(c.createdAt)}</strong>
+      ${parts.length ? `<div class="cvals">${parts.join(' &nbsp; ')}</div>` : ''}
+      ${c.notes ? `<div style="white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.notes)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function submitCheckin(){
+  const notes = document.getElementById('checkinNotes').value.trim();
+  if (!checkinState.mood && !checkinState.sleepQuality && !checkinState.energyLevel && !notes){
+    alert('Escolha pelo menos uma escala ou escreva algo antes de guardar.');
+    return;
+  }
+  const btn = document.getElementById('checkinSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = 'A guardar…';
+  try{
+    await callPortal('addCheckin', { mood: checkinState.mood, sleepQuality: checkinState.sleepQuality, energyLevel: checkinState.energyLevel, notes });
+    document.getElementById('checkinNotes').value = '';
+    checkinState.mood = null; checkinState.sleepQuality = null; checkinState.energyLevel = null;
+    buildScale('moodScale', 'mood', MOOD_ICONS);
+    buildScale('sleepScale', 'sleepQuality', SLEEP_ICONS);
+    buildScale('energyScale', 'energyLevel', ENERGY_ICONS);
+    const data = await callPortal('get');
+    renderCheckinHistory(data.checkins);
+    btn.textContent = '✅ Registado!';
+    setTimeout(() => { btn.textContent = 'Guardar registo de hoje'; }, 1800);
+  }catch(e){
+    alert('Não foi possível guardar o registo. Tente novamente.');
+    btn.textContent = 'Guardar registo de hoje';
+  }
+  btn.disabled = false;
+}
+
+async function sendMessage(){
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.disabled = true;
+  try{
+    await callPortal('sendMessage', { text });
+    input.value = '';
+    const data = await callPortal('get');
+    renderMessages(data.messages);
+  }catch(e){
+    alert('Não foi possível enviar a mensagem. Tente novamente.');
+  }
+  input.disabled = false;
+  input.focus();
+}
+
+async function load(){
+  const main = document.getElementById('mainContent');
+  if (!tenantId || !patientId || !token){
+    main.innerHTML = '<div class="errorbox">Link incompleto. Peça ao seu terapeuta um novo link.</div>';
+    return;
+  }
+  try{
+    const data = await callPortal('get');
+    document.documentElement.style.setProperty('--primary', data.primaryColor || '#1a2b26');
+    document.getElementById('hBusiness').textContent = data.businessName;
+    document.getElementById('hPatient').textContent = 'Olá, ' + data.patientName + '!';
+    document.title = data.businessName + ' — Portal do Paciente';
+
+    const upcomingHtml = data.upcoming.length
+      ? data.upcoming.map(a => `
+        <div class="appt">
+          <strong>${formatDateTime(a.startsAt)}</strong>
+          <span class="muted">${escapeHtml(a.serviceName||'')} ${a.local==='online' ? '· 💻 Online' : ''}</span>
+        </div>`).join('')
+      : '<p class="muted">Sem marcações agendadas.</p>';
+
+    const pastHtml = data.past.length
+      ? data.past.map(a => `
+        <div class="appt">
+          <strong>${formatDateTime(a.startsAt)}</strong>
+          <span class="muted">${escapeHtml(a.serviceName||'')}</span>
+        </div>`).join('')
+      : '<p class="muted">Ainda sem consultas anteriores.</p>';
+
+    const reportsHtml = data.reports.length
+      ? data.reports.map(r => `
+        <div class="appt" style="cursor:pointer;" onclick="toggleReport('${r.id}')">
+          <div class="row" style="justify-content:space-between;align-items:center;">
+            <div>
+              <strong>${escapeHtml(r.protocolName||'Relatório')}</strong>
+              <span class="muted">${r.generatedAt ? formatDateTime(r.generatedAt) : ''}</span>
+            </div>
+            <span class="muted">Toque para ver ▾</span>
+          </div>
+          <div id="report_${r.id}" style="display:none;margin-top:8px;white-space:pre-wrap;font-size:.85rem;background:#fff;border-radius:8px;padding:10px;">${escapeHtml(r.reportText||'Sem conteúdo disponível.')}</div>
+        </div>`).join('')
+      : '<p class="muted">Ainda sem relatórios partilhados.</p>';
+
+    const healingHtml = (data.healingProtocols||[]).length
+      ? data.healingProtocols.map(h => `
+        <div class="appt">
+          <strong>${h.generatedAt ? formatDateTime(h.generatedAt) : 'Rotina de cura'}</strong>
+          ${h.emotionalPattern ? `<div class="muted">Padrão Emocional: ${escapeHtml(h.emotionalPattern)}</div>` : ''}
+          ${h.notes ? `<div style="margin-top:6px;white-space:pre-wrap;">${escapeHtml(h.notes)}</div>` : ''}
+          ${h.materialsLink ? `<a class="btn btn-block" style="margin-top:8px;" target="_blank" href="${escapeHtml(h.materialsLink)}">🎧 Abrir materiais de apoio</a>` : ''}
+        </div>`).join('')
+      : '';
+
+    const hasOnlineUpcoming = data.upcoming.some(a => a.local === 'online');
+    const oc = data.onlineConsult || { tool: 'jitsi' };
+    let onlineToolHtml = '';
+    if (oc.tool === 'custom' && oc.customLink){
+      onlineToolHtml = `<a class="btn btn-block" target="_blank" href="${escapeHtml(oc.customLink)}">Entrar na videochamada</a>`;
+    } else if (oc.tool === 'whatsapp' && oc.whatsappNumber){
+      onlineToolHtml = `<a class="btn btn-block" target="_blank" href="https://wa.me/${oc.whatsappNumber}">Abrir WhatsApp</a>
+        <p class="muted" style="margin-top:6px;">O seu terapeuta vai iniciar a chamada de vídeo lá dentro, à hora combinada.</p>`;
+    } else {
+      const jitsiRoom = 'saudecare-' + tenantId.slice(0,8) + '-' + patientId.slice(0,8);
+      onlineToolHtml = `<a class="btn btn-block" target="_blank" href="https://meet.jit.si/${jitsiRoom}">Entrar na videochamada</a>`;
+    }
+
+    main.innerHTML = `
+      <div class="card crisis">
+        <strong>⚠️ Este espaço não é monitorizado 24 horas.</strong>
+        Se estiver numa situação de crise ou emergência, não espere por uma resposta aqui — contacte a Linha SNS24 (808 24 24 24) ou o 112 imediatamente.
+      </div>
+
+      ${hasOnlineUpcoming ? `
+      <div class="card">
+        <h2>💻 Consulta online</h2>
+        <p class="muted">Tem uma consulta online agendada. Toque no botão à hora combinada.</p>
+        ${onlineToolHtml}
+      </div>` : ''}
+
+      <div class="card">
+        <h2>📅 Próximas marcações</h2>
+        ${upcomingHtml}
+      </div>
+
+      <div class="card">
+        <h2>🌱 Diário de Bem-Estar</h2>
+        <p class="muted" style="margin-bottom:10px;">Registe como se sente hoje — sono, energia, humor, ou o que quiser partilhar. Fica guardado para o seu terapeuta acompanhar consigo, sessão após sessão. Não precisa de preencher tudo, nem todos os dias.</p>
+        <div class="scale-label">Humor</div>
+        <div class="scale-row" id="moodScale"></div>
+        <div class="scale-label" style="margin-top:10px;">Sono</div>
+        <div class="scale-row" id="sleepScale"></div>
+        <div class="scale-label" style="margin-top:10px;">Energia</div>
+        <div class="scale-row" id="energyScale"></div>
+        <textarea id="checkinNotes" placeholder="Algo que queira partilhar (sintomas, pensamentos, o que sentir)…" rows="3" style="width:100%;margin-top:12px;padding:9px 10px;border:1px solid #ccc;border-radius:8px;font-family:inherit;font-size:.9rem;resize:vertical;"></textarea>
+        <button id="checkinSubmitBtn" class="btn btn-block" onclick="submitCheckin()">Guardar registo de hoje</button>
+        <div id="checkinHistory" style="margin-top:14px;"></div>
+      </div>
+
+      <div class="card">
+        <h2>💬 Mensagens</h2>
+        <p class="muted" style="margin-bottom:8px;">Fale com o seu terapeuta entre sessões.</p>
+        <div id="msgs"></div>
+        <div class="inputrow">
+          <input id="msgInput" placeholder="Escrever mensagem…" onkeydown="if(event.key==='Enter')sendMessage()">
+          <button class="btn" onclick="sendMessage()">Enviar</button>
+        </div>
+      </div>
+
+      ${healingHtml ? `
+      <div class="card">
+        <h2>🌿 A minha rotina de cura</h2>
+        ${healingHtml}
+      </div>` : ''}
+
+      <div class="card">
+        <h2>🗓️ Histórico de consultas</h2>
+        ${pastHtml}
+      </div>
+
+      <div class="card">
+        <h2>📖 Relatórios de consultas anteriores</h2>
+        ${reportsHtml}
+      </div>
+    `;
+    renderMessages(data.messages);
+    buildScale('moodScale', 'mood', MOOD_ICONS);
+    buildScale('sleepScale', 'sleepQuality', SLEEP_ICONS);
+    buildScale('energyScale', 'energyLevel', ENERGY_ICONS);
+    renderCheckinHistory(data.checkins);
+  }catch(e){
+    console.error(e);
+    main.innerHTML = '<div class="errorbox">Não foi possível abrir o seu portal. Verifique o link ou peça um novo ao seu terapeuta.</div>';
+  }
+}
+
+load();
+</script>
+</body>
+</html>
