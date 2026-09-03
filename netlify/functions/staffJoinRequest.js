@@ -37,23 +37,48 @@ exports.handler = async function (event) {
     }
     const decoded = await admin.auth().verifyIdToken(idToken);
 
-    const { tenantId, inviteId, name } = JSON.parse(event.body || '{}');
-    if (!tenantId || !inviteId || !name) {
+    const { tenantId, inviteId, code, name } = JSON.parse(event.body || '{}');
+    if (!name || (!code && (!tenantId || !inviteId))) {
       return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Dados em falta.' }) };
     }
 
-    // 2. Confirma que o convite existe e ainda não foi usado.
-    const inviteRef = admin.firestore().doc(`tenants/${tenantId}/staffInvites/${inviteId}`);
-    const inviteSnap = await inviteRef.get();
-    if (!inviteSnap.exists || inviteSnap.data().used) {
-      return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Este convite já não é válido.' }) };
+    let inviteRef, resolvedTenantId, resolvedInviteId;
+
+    if (code) {
+      // 2a. Convite por código — leitura direta ao mapa código→convite
+      // (sem pesquisas nem índices: rápido e sem risco de erro técnico
+      // para quem está a usar o código, seja qual for o subscritor).
+      const codeRef = admin.firestore().doc(`inviteCodes/${code}`);
+      const codeSnap = await codeRef.get();
+      if (!codeSnap.exists || codeSnap.data().used) {
+        return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Este código não é válido ou já foi usado. Peça um novo código ao dono do consultório.' }) };
+      }
+      resolvedTenantId = codeSnap.data().tenantId;
+      resolvedInviteId = codeSnap.data().inviteId;
+      inviteRef = admin.firestore().doc(`tenants/${resolvedTenantId}/staffInvites/${resolvedInviteId}`);
+      const inviteSnap = await inviteRef.get();
+      if (!inviteSnap.exists || inviteSnap.data().used) {
+        return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Este convite já não é válido.' }) };
+      }
+      await codeRef.update({ used: true });
+    } else {
+      // 2b. Convite por link (tenantId + inviteId).
+      inviteRef = admin.firestore().doc(`tenants/${tenantId}/staffInvites/${inviteId}`);
+      const inviteSnap = await inviteRef.get();
+      if (!inviteSnap.exists || inviteSnap.data().used) {
+        return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Este convite já não é válido.' }) };
+      }
+      resolvedTenantId = tenantId;
+      resolvedInviteId = inviteId;
     }
+
+    const inviteSnap = await inviteRef.get();
     const role = inviteSnap.data().role;
 
     // 3. Cria o pedido de acesso (por ativar) e marca o convite como usado.
-    await admin.firestore().doc(`tenants/${tenantId}/staff/${decoded.uid}`).set({
+    await admin.firestore().doc(`tenants/${resolvedTenantId}/staff/${decoded.uid}`).set({
       name, email: decoded.email || '', role, status: 'pending_activation',
-      viaInviteId: inviteId, createdAt: admin.firestore.FieldValue.serverTimestamp()
+      viaInviteId: resolvedInviteId, createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
     await inviteRef.update({ used: true, usedByUid: decoded.uid, role });
 
