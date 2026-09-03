@@ -23,7 +23,7 @@ exports.handler = async function (event) {
   }
 
   try {
-    const { tenantId, patientId, token, action, text } = JSON.parse(event.body || '{}');
+    const { tenantId, patientId, token, action, text, mood, sleepQuality, energyLevel, notes } = JSON.parse(event.body || '{}');
     if (!tenantId || !patientId || !token) {
       return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Dados em falta.' }) };
     }
@@ -47,6 +47,21 @@ exports.handler = async function (event) {
       if (!cleanText) return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Mensagem vazia.' }) };
       await patientRef.collection('messages').add({
         sender: 'patient', text: cleanText, readByProfessional: false, createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true }) };
+    }
+
+    if (action === 'addCheckin') {
+      const moodVal = Number.isInteger(mood) ? Math.max(1, Math.min(5, mood)) : null;
+      const sleepVal = Number.isInteger(sleepQuality) ? Math.max(1, Math.min(5, sleepQuality)) : null;
+      const energyVal = Number.isInteger(energyLevel) ? Math.max(1, Math.min(5, energyLevel)) : null;
+      const cleanNotes = (notes || '').trim().slice(0, 2000);
+      if (moodVal === null && sleepVal === null && energyVal === null && !cleanNotes) {
+        return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Registo vazio.' }) };
+      }
+      await patientRef.collection('checkins').add({
+        mood: moodVal, sleepQuality: sleepVal, energyLevel: energyVal, notes: cleanNotes,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
       return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true }) };
     }
@@ -76,6 +91,9 @@ exports.handler = async function (event) {
     const messagesSnap = await patientRef.collection('messages').orderBy('createdAt', 'asc').limit(200).get();
     const messages = messagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+    const checkinsSnap = await patientRef.collection('checkins').orderBy('createdAt', 'desc').limit(60).get();
+    const checkins = checkinsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
     const toIso = v => (v && typeof v.toDate === 'function') ? v.toDate().toISOString() : v;
 
     return {
@@ -90,7 +108,8 @@ exports.handler = async function (event) {
         past: past.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         reports: reports.map(r => ({ ...r, generatedAt: toIso(r.generatedAt) })),
         healingProtocols: healingProtocols.map(h => ({ ...h, generatedAt: toIso(h.generatedAt) })),
-        messages: messages.map(m => ({ ...m, createdAt: toIso(m.createdAt) }))
+        messages: messages.map(m => ({ ...m, createdAt: toIso(m.createdAt) })),
+        checkins: checkins.map(c => ({ ...c, createdAt: toIso(c.createdAt) }))
       })
     };
   } catch (err) {
