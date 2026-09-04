@@ -66,6 +66,14 @@ exports.handler = async function (event) {
       return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true }) };
     }
 
+    if (action === 'giveConsent') {
+      await patientRef.update({
+        portalConsentGivenAt: admin.firestore.FieldValue.serverTimestamp(),
+        portalConsentVersion: (await tenantRef.get()).data()?.legalTexts?.consentVersion || 'v1'
+      });
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true }) };
+    }
+
     // Ação por omissão: devolver os dados do portal.
     if (!patient.portalFirstAccessedAt) {
       await patientRef.update({ portalFirstAccessedAt: admin.firestore.FieldValue.serverTimestamp() });
@@ -103,13 +111,17 @@ exports.handler = async function (event) {
         patientName: patient.fullName || '',
         businessName: tenant.businessName || 'SaúdeCare',
         primaryColor: tenant?.branding?.primaryColor || '#1a2b26',
+        logoUrl: tenant?.branding?.logoUrl || '',
         onlineConsult: tenant?.onlineConsult || { tool: 'jitsi' },
         upcoming: upcoming.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         past: past.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         reports: reports.map(r => ({ ...r, generatedAt: toIso(r.generatedAt) })),
         healingProtocols: healingProtocols.map(h => ({ ...h, generatedAt: toIso(h.generatedAt) })),
         messages: messages.map(m => ({ ...m, createdAt: toIso(m.createdAt) })),
-        checkins: checkins.map(c => ({ ...c, createdAt: toIso(c.createdAt) }))
+        checkins: checkins.map(c => ({ ...c, createdAt: toIso(c.createdAt) })),
+        consentText: tenant?.legalTexts?.consentText || '',
+        consentVersion: tenant?.legalTexts?.consentVersion || 'v1',
+        portalConsentGivenAt: toIso(patient.portalConsentGivenAt) || null
       })
     };
   } catch (err) {
