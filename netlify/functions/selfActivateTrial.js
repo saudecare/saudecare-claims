@@ -7,7 +7,11 @@ if (!admin.apps.length) {
   });
 }
 
-const TRIAL_DAYS = 14;
+// Estes 14 dias são só o valor de reserva, caso a definição em
+// settings/platformConfig ainda não exista — o valor real é controlado
+// pela administradora da plataforma, no painel de administração
+// (nunca visível aos subscritores).
+const DEFAULT_TRIAL_DAYS = 7;
 
 // Ativa automaticamente o período de teste gratuito, sem precisar de
 // aprovação manual — diferente de activateTenant.js (que continua a exigir
@@ -52,6 +56,21 @@ exports.handler = async function (event) {
       return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Esta conta já não está pendente de ativação.' }) };
     }
 
+    // Lê a configuração da administradora da plataforma — nunca exposta
+    // aos subscritores, só controlável no painel de administração.
+    const configSnap = await admin.firestore().collection('settings').doc('platformConfig').get();
+    const config = configSnap.exists ? configSnap.data() : {};
+    const trialEnabled = config.trialEnabled !== false; // por omissão, ativo
+    const trialDays = Number.isFinite(config.trialDays) ? config.trialDays : DEFAULT_TRIAL_DAYS;
+
+    if (!trialEnabled) {
+      // Período de teste desligado — a conta fica "por ativar" à espera
+      // de aprovação manual da administradora, em vez de ativar sozinha.
+      // Não marca o email como "já usou período de teste", para não o
+      // impedir de o ter mais tarde, se o período for reativado.
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, pendingManualActivation: true }) };
+    }
+
     // Cada email só tem direito a UM período de teste automático — mesmo
     // que a conta seja apagada e recriada (o que gera um uid novo, mas o
     // email fica registado aqui de qualquer forma).
@@ -64,7 +83,7 @@ exports.handler = async function (event) {
       await trialClaimRef.set({ uid, usedAt: admin.firestore.FieldValue.serverTimestamp() });
     }
 
-    const trialEndsAt = admin.firestore.Timestamp.fromMillis(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+    const trialEndsAt = admin.firestore.Timestamp.fromMillis(Date.now() + trialDays * 24 * 60 * 60 * 1000);
 
     await admin.auth().setCustomUserClaims(uid, { tenantId: uid, role: 'owner' });
     await tenantRef.update({ status: 'trial', trialEndsAt });
