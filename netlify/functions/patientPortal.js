@@ -112,7 +112,7 @@ exports.handler = async function (event) {
         businessName: tenant.businessName || 'SaúdeCare',
         primaryColor: tenant?.branding?.primaryColor || '#1a2b26',
         logoUrl: tenant?.branding?.logoUrl || '',
-        onlineConsult: tenant?.onlineConsult || { tool: 'jitsi' },
+        onlineConsult: tenant?.onlineConsult || { tool: 'whatsapp' },
         upcoming: upcoming.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         past: past.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         reports: reports.map(r => ({ ...r, generatedAt: toIso(r.generatedAt) })),
