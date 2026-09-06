@@ -119,6 +119,7 @@ exports.handler = async function (event) {
           customFields: patient.customFields || [],
           clinicalNotes: showClinicalNotes ? (patient.clinicalNotes || '') : null
         },
+        sharedMaterials: patient.sharedMaterials || [],
         businessName: tenant.businessName || 'SaúdeCare',
         primaryColor: tenant?.branding?.primaryColor || '#1a2b26',
         logoUrl: tenant?.branding?.logoUrl || '',
