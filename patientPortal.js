@@ -74,6 +74,25 @@ exports.handler = async function (event) {
       return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true }) };
     }
 
+    if (action === 'markMessagesRead') {
+      const unreadSnap = await patientRef.collection('messages')
+        .where('sender', '==', 'professional')
+        .where('readByPatient', '==', false)
+        .get();
+      const batch = db.batch();
+      unreadSnap.forEach(d => batch.update(d.ref, { readByPatient: true }));
+      await batch.commit();
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true }) };
+    }
+
+    if (action === 'unreadCount') {
+      const unreadSnap = await patientRef.collection('messages')
+        .where('sender', '==', 'professional')
+        .where('readByPatient', '==', false)
+        .get();
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, unreadMessagesCount: unreadSnap.size }) };
+    }
+
     // Ação por omissão: devolver os dados do portal.
     if (!patient.portalFirstAccessedAt) {
       await patientRef.update({ portalFirstAccessedAt: admin.firestore.FieldValue.serverTimestamp() });
@@ -99,6 +118,7 @@ exports.handler = async function (event) {
 
     const messagesSnap = await patientRef.collection('messages').orderBy('createdAt', 'asc').limit(200).get();
     const messages = messagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const unreadMessagesCount = messages.filter(m => m.sender === 'professional' && m.readByPatient === false).length;
 
     const checkinsSnap = await patientRef.collection('checkins').orderBy('createdAt', 'desc').limit(60).get();
     const checkins = checkinsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -110,6 +130,7 @@ exports.handler = async function (event) {
       body: JSON.stringify({
         ok: true,
         patientName: patient.fullName || '',
+        preferredChannel: patient.preferredChannel || 'portal',
         myData: {
           fullName: patient.fullName || '',
           phone: patient.phone || '',
@@ -129,6 +150,7 @@ exports.handler = async function (event) {
         reports: reports.map(r => ({ ...r, generatedAt: toIso(r.generatedAt) })),
         healingProtocols: healingProtocols.map(h => ({ ...h, generatedAt: toIso(h.generatedAt) })),
         messages: messages.map(m => ({ ...m, createdAt: toIso(m.createdAt) })),
+        unreadMessagesCount,
         checkins: checkins.map(c => ({ ...c, createdAt: toIso(c.createdAt) })),
         consentText: tenant?.legalTexts?.consentText || '',
         consentVersion: tenant?.legalTexts?.consentVersion || 'v1',
