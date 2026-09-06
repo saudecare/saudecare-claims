@@ -483,6 +483,7 @@ exports.handler = async function (event) {
               merchant_code: sumupMerchantCode,
               description: 'Mapa da Alma Diamante — Hikari Fafe',
               hosted_checkout: { enabled: true },
+              return_url: 'https://effortless-entremet-7de9ef.netlify.app/.netlify/functions/mapaAlmaWebhook',
               redirect_url: `https://vindora.pt/mapa-da-alma.html?mapa=${leadId}`
             })
           });
