@@ -123,6 +123,24 @@ exports.handler = async function (event) {
     const checkinsSnap = await patientRef.collection('checkins').orderBy('createdAt', 'desc').limit(60).get();
     const checkins = checkinsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+    // Quando há mais do que um terapeuta na clínica, o botão de vídeochamada
+    // do paciente deve chamar o WhatsApp do terapeuta certo — o da próxima
+    // consulta online marcada e, na falta dessa, o profissional atribuído
+    // a este paciente. "tenantId" como staffUid quer dizer "é a dona/dono",
+    // que já usa o número geral configurado em Consultório Online.
+    let onlineConsult = tenant?.onlineConsult || { tool: 'whatsapp' };
+    if (onlineConsult.tool === 'whatsapp') {
+      const nextOnlineAppt = upcoming.find(a => a.local === 'online');
+      const relevantStaffUid = nextOnlineAppt?.staffUid || patient.assignedStaffUid || null;
+      if (relevantStaffUid && relevantStaffUid !== tenantId) {
+        const teamSnap = await tenantRef.collection('teamMembers').where('staffUid', '==', relevantStaffUid).limit(1).get();
+        const staffWhatsapp = teamSnap.empty ? null : (teamSnap.docs[0].data().whatsappNumber || null);
+        if (staffWhatsapp) {
+          onlineConsult = { tool: 'whatsapp', whatsappNumber: staffWhatsapp };
+        }
+      }
+    }
+
     const toIso = v => (v && typeof v.toDate === 'function') ? v.toDate().toISOString() : v;
 
     return {
@@ -144,7 +162,7 @@ exports.handler = async function (event) {
         businessName: tenant.businessName || 'SaúdeCare',
         primaryColor: tenant?.branding?.primaryColor || '#1a2b26',
         logoUrl: tenant?.branding?.logoUrl || '',
-        onlineConsult: tenant?.onlineConsult || { tool: 'whatsapp' },
+        onlineConsult,
         upcoming: upcoming.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         past: past.map(a => ({ ...a, startsAt: toIso(a.startsAt) })),
         reports: reports.map(r => ({ ...r, generatedAt: toIso(r.generatedAt) })),
