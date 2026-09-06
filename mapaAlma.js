@@ -12,6 +12,39 @@ const cors = {
 };
 
 const MAPA_ALMA_PRICE = Number(process.env.MAPA_ALMA_PRICE || 27);
+const DEFAULT_PRICES_BY_TYPE = { individual: 27, casal: 45, familia: 60, bebe: 20, empresa: 80 };
+
+// Calcula o preço efetivo de um tipo de mapa, tendo em conta a tabela de
+// preços da subscritora e uma eventual promoção ativa (lançamento). NUNCA
+// confia em preços vindos do cliente — só o servidor decide o valor final.
+// A promoção pode estar configurada de 3 formas (tenant.mapaAlmaSettings.promo):
+//   mode 'indefinite' — fica ativa até a subscritora a desligar à mão.
+//   mode 'until'       — tem uma data/hora de fim (until, ISO string).
+//   mode 'maxOrders'   — desliga sozinha ao atingir maxOrders confirmados
+//                         (contados em promo.ordersUsed).
+function getEffectivePrice(tenant, tipo){
+  const settings = tenant?.mapaAlmaSettings || {};
+  const table = settings.pricesByType || DEFAULT_PRICES_BY_TYPE;
+  const normalPrice = table[tipo] ?? settings.price ?? MAPA_ALMA_PRICE;
+
+  const promo = settings.promo;
+  if (!promo || !promo.active) return { price: normalPrice, normalPrice, promoActive: false };
+
+  const appliesTo = promo.appliesTo && promo.appliesTo.length ? promo.appliesTo : null;
+  if (appliesTo && !appliesTo.includes(tipo)) return { price: normalPrice, normalPrice, promoActive: false };
+
+  if (promo.mode === 'until' && promo.until){
+    if (Date.now() > new Date(promo.until).getTime()) return { price: normalPrice, normalPrice, promoActive: false };
+  }
+  if (promo.mode === 'maxOrders' && Number.isFinite(promo.maxOrders)){
+    if ((promo.ordersUsed || 0) >= promo.maxOrders) return { price: normalPrice, normalPrice, promoActive: false };
+  }
+  return {
+    price: promo.price, normalPrice, promoActive: true,
+    promoMode: promo.mode, promoUntil: promo.until || null,
+    promoOrdersLeft: promo.mode === 'maxOrders' ? Math.max(0, (promo.maxOrders||0) - (promo.ordersUsed||0)) : null
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // BASE DE CONHECIMENTO — MÉTODO HIKARI FAFE — Mapa da Alma Diamante
@@ -359,6 +392,7 @@ function generateFullResult(freeResult, extra, overrides){
   const banho = BANHOS_SIGNO_M[signoNome] || bathAndMantraForSign(signoNome);
   result.banhoErvas = banho.ervas;
   result.banhoModo = 'Ferva 2 litros de água, desligue o lume, deite as ervas indicadas, abafe 10 minutos, coe e verta do pescoço para baixo após a higiene regular.';
+  result.avisoProfissional = 'Os banhos e orações acima são seguros para fazer em casa. Mas se o seu Mapa apontou sinais fortes (excesso energético marcante, lição cármica pesada, ou o sinal de mediunidade) — ou se sente que "algo mais" pesa sobre si (magia, olho gordo, larvas astrais, entidades) — isso exige uma avaliação e tratamento feitos por alguém com experiência e capacitação, nunca sozinho(a) em casa. Marque uma Consulta de Pesquisa Energética para uma avaliação completa e segura.';
   result.planoAtivacao = `Dias 1-7: repita todas as manhãs a Oração de Conexão + a Afirmação EU SOU do seu número, e faça o Banho de Ervas do seu signo.\nDias 8-14: pratique 10 minutos de Reiki de autotratamento ou meditação com o mantra sugerido; faça o Banho de Descarrego (396Hz) numa noite de lua minguante, se possível.\nDias 15-21: faça o Banho de Proteção (963Hz) numa manhã antes de um dia importante, repita os 3 Decretos do EU SOU, e escreva 3 sinais de que a vibração de número ${cv} está mais presente na sua vida.`;
 
   return result;
@@ -387,6 +421,7 @@ exports.handler = async function (event) {
           ok: true, overrides,
           socialLinks: tenant?.socialLinks || {},
           limpezaTexto: tenant?.mapaAlmaSettings?.limpezaTexto || null,
+          limpezaPrecoConsulta: tenant?.mapaAlmaSettings?.limpezaPrecoConsulta ?? 35,
           whatsapp: tenant?.onlineConsult?.whatsappNumber || null
         })
       };
@@ -429,7 +464,8 @@ exports.handler = async function (event) {
 
       const sumupKey = process.env.SUMUP_API_KEY;
       const sumupMerchantCode = process.env.SUMUP_MERCHANT_CODE;
-      const price = tenant?.mapaAlmaSettings?.price || MAPA_ALMA_PRICE;
+      const priceInfo = getEffectivePrice(tenant, lead.tipo || 'individual');
+      const price = priceInfo.price;
 
       if (sumupKey && sumupMerchantCode) {
         // Deteção automática via SumUp Hosted Checkout.
@@ -452,7 +488,7 @@ exports.handler = async function (event) {
           });
           const checkoutData = await checkoutRes.json();
           if (checkoutRes.ok && checkoutData.hosted_checkout_url) {
-            await leadRef.update({ sumupCheckoutId: checkoutData.id || null, paymentStatus: 'checkout_created' });
+            await leadRef.update({ sumupCheckoutId: checkoutData.id || null, paymentStatus: 'checkout_created', chargedPrice: price });
             return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, checkoutUrl: checkoutData.hosted_checkout_url }) };
           }
           console.error('SumUp checkout falhou, a usar pagamento manual:', checkoutData);
@@ -462,20 +498,30 @@ exports.handler = async function (event) {
       }
 
       // Sem SumUp configurado (ou falhou) — cai para confirmação manual.
-      await leadRef.update({ paymentStatus: 'manual_pending' });
+      await leadRef.update({ paymentStatus: 'manual_pending', chargedPrice: price });
       const mapaSettings = tenant?.mapaAlmaSettings || {};
+      const refCode = 'MA-' + leadId.slice(0, 6).toUpperCase();
       return {
         statusCode: 200, headers: cors,
         body: JSON.stringify({
           ok: true,
           paymentInfo: {
-            price: mapaSettings.price || MAPA_ALMA_PRICE,
+            price,
+            normalPrice: priceInfo.promoActive ? priceInfo.normalPrice : null,
             iban: mapaSettings.iban || null,
             mbway: mapaSettings.mbway || null,
-            whatsapp: tenant?.onlineConsult?.whatsappNumber || null
+            whatsapp: tenant?.onlineConsult?.whatsappNumber || null,
+            refCode
           }
         })
       };
+    }
+
+    if (action === 'getPrice') {
+      const tenantSnap2 = await db.collection('tenants').doc(tenantId).get();
+      const tenant2 = tenantSnap2.exists ? tenantSnap2.data() : {};
+      const priceInfo2 = getEffectivePrice(tenant2, lead.tipo || 'individual');
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, ...priceInfo2 }) };
     }
 
     return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Ação desconhecida.' }) };
