@@ -400,6 +400,41 @@ function generateFullResult(freeResult, extra, overrides){
 
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' };
+
+  // Diagnóstico rápido — abrir este link diretamente no navegador mostra
+  // exatamente o que a SumUp responde, sem precisar de ir aos registos do
+  // Netlify. Só de leitura, não altera nada.
+  if (event.httpMethod === 'GET' && event.queryStringParameters?.testSumUp) {
+    const key = process.env.SUMUP_API_KEY;
+    const merchantCode = process.env.SUMUP_MERCHANT_CODE;
+    if (!key || !merchantCode) {
+      return { statusCode: 200, headers: cors, body: JSON.stringify({
+        ok: false,
+        problema: 'As variáveis SUMUP_API_KEY ou SUMUP_MERCHANT_CODE não estão configuradas no Netlify (ou o deploy ainda não as aplicou).',
+        temApiKey: !!key, temMerchantCode: !!merchantCode
+      }, null, 2) };
+    }
+    try {
+      const res = await fetch('https://api.sumup.com/v0.1/checkouts', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkout_reference: 'teste-diagnostico-' + Date.now(),
+          amount: 1, currency: 'EUR', merchant_code: merchantCode,
+          description: 'Teste de diagnóstico Vindora — pode ignorar'
+        })
+      });
+      const data = await res.json();
+      return { statusCode: 200, headers: cors, body: JSON.stringify({
+        ok: res.ok,
+        respostaDaSumUp: data,
+        explicacao: res.ok ? 'Funcionou! A SumUp aceitou o pedido de teste.' : 'A SumUp recusou o pedido — ver "respostaDaSumUp" acima para o motivo exato.'
+      }, null, 2) };
+    } catch (e) {
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: false, erro: String(e) }, null, 2) };
+    }
+  }
+
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers: cors, body: JSON.stringify({ error: 'Método não permitido.' }) };
   }
