@@ -315,6 +315,39 @@ async function loadOverrides(tenantId){
   }catch(e){ console.error('Falha ao carregar overrides:', e); return {}; }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// COMPATIBILIDADE DE CASAL, FAMÍLIA E EMPRESA — fonte e método
+// ═══════════════════════════════════════════════════════════════════════
+// Casal: segue a prática comum entre numerólogos lusófonos de comparar o
+// Caminho de Vida de cada elemento e somar os dois números, reduzindo-os
+// (respeitando Números Mestres), para obter a "vibração do casal enquanto
+// unidade" — o mesmo princípio de soma+redução usado em todo este método.
+// O agrupamento em 3 grupos (ativo/estável/emocional) é uma classificação
+// numerológica clássica: números 1-5-7 (ação/independência),
+// 2-4-8 (estabilidade/prática), 3-6-9 (emoção/criatividade) — usada aqui
+// para avaliar se dois números "falam a mesma língua" ou se são
+// complementares. A leitura de elementos astrológicos (Fogo/Terra/Ar/Água)
+// segue a compatibilidade clássica: Fogo+Ar e Terra+Água fluem bem; pares
+// do mesmo elemento espelham-se; as restantes combinações são descritas
+// como "desafio fértil", nunca como incompatibilidade definitiva — a
+// numerologia/astrologia são ferramentas de reflexão, não previsões
+// determinísticas, e a leitura deve refletir sempre essa cautela.
+//
+// Família: em vez de inventar um "número de harmonia familiar" isolado,
+// segue-se a mesma lógica de soma+redução de todos os Caminhos de Vida
+// dos elementos indicados, para chegar a uma "vibração de grupo" — uma
+// aproximação simples e defensável da abordagem sistémica usada por
+// numerólogos que leem famílias (que compara a Missão de Vida de cada
+// membro para identificar papéis e pontos de atrito no grupo).
+//
+// Empresa: segue a prática de numerologia empresarial de comparar a
+// vibração do nome comercial com o tipo de atividade do negócio, e de
+// sugerir ajustes não-destrutivos (nome fantasia complementar, datas
+// favoráveis para lançamentos, elementos visuais) em vez de recomendar
+// mudar o nome legal — mantendo a leitura sempre como ferramenta de
+// reflexão de apoio à decisão, nunca como garantia de resultado.
+// ═══════════════════════════════════════════════════════════════════════
+
 // Arquétipo relacional por Caminho de Vida — o "papel" que cada número
 // tende a assumir dentro de uma relação a dois.
 const PAPEL_RELACAO = {
@@ -325,42 +358,54 @@ const PAPEL_RELACAO = {
   9:'o coração generoso — perdoa fácil, sabe fechar ciclos.', 11:'o intuitivo — sente o que ainda não foi dito em voz alta.',
   22:'o construtor — pensa grande para os dois, arquiteta o projeto de vida comum.', 33:'o cuidador incondicional — ama sem pedir nada em troca.'
 };
-function compatibilidadeElemental(el1, el2){
-  if (!el1 || !el2) return null;
-  const pares = [['Fogo','Ar'],['Terra','Água']];
-  if (el1 === el2) return { nivel:'espelho', texto:`Ambos de elemento ${el1} — reconhecem-se com facilidade, mas tendem a amplificar um no outro tanto as qualidades como os excessos deste elemento.` };
-  if (pares.some(([a,b]) => (el1===a&&el2===b)||(el1===b&&el2===a))) return { nivel:'harmonioso', texto:`${el1} e ${el2} alimentam-se mutuamente de forma natural — uma combinação classicamente fluida.` };
-  return { nivel:'desafio fértil', texto:`${el1} e ${el2} são elementos que se desafiam um ao outro — pode gerar atrito, mas costuma ser também o tipo de combinação que mais cresce quando há vontade dos dois lados.` };
-}
 
 // Agrupamento clássico de números para leitura de compatibilidade (casal) —
 // números do mesmo grupo tendem a "falar a mesma língua"; grupos vizinhos
 // são combinações com potencial mas que pedem mais comunicação consciente.
 const GRUPO_NUMERO = { 1:'ativo', 5:'ativo', 7:'ativo', 11:'ativo', 2:'estável', 4:'estável', 8:'estável', 22:'estável', 3:'emocional', 6:'emocional', 9:'emocional', 33:'emocional' };
-function compatibilidadeCasal(cv1, cv2, nome1, nome2){
+// Substitui {{chave}} num texto editável por um valor — usado para deixar
+// a Hikari editar as frases de compatibilidade sem tocar em código.
+function applyTemplate(tpl, vars){
+  return tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
+}
+
+function compatibilidadeCasal(cv1, cv2, nome1, nome2, overrides){
+  overrides = overrides || {};
   const g1 = GRUPO_NUMERO[cv1] || 'estável';
   const g2 = GRUPO_NUMERO[cv2] || 'estável';
+  const vars = { nome1, nome2, cv1, cv2 };
   let texto, conselho;
   if (cv1 === cv2){
-    texto = `${nome1} e ${nome2} partilham o mesmo Caminho de Vida (${cv1}) — um espelho vibracional. Entendem-se com facilidade, mas há risco de repetirem juntos os mesmos padrões e pontos cegos.`;
-    conselho = 'Conselho: procurem ativamente pontos de vista diferentes um do outro — convidem terceiros (amigos, terapeuta de casal) a dar perspetivas que nenhum dos dois consegue ver sozinho.';
+    texto = applyTemplate(overrides.textoEspelho || `{{nome1}} e {{nome2}} partilham o mesmo Caminho de Vida ({{cv1}}) — um espelho vibracional. Entendem-se com facilidade, mas há risco de repetirem juntos os mesmos padrões e pontos cegos.`, vars);
+    conselho = overrides.conselhoEspelho || 'Conselho: procurem ativamente pontos de vista diferentes um do outro — convidem terceiros (amigos, terapeuta de casal) a dar perspetivas que nenhum dos dois consegue ver sozinho.';
   } else if (g1 === g2){
-    texto = `${nome1} (${cv1}) e ${nome2} (${cv2}) vibram no mesmo grupo energético — afinidade natural de ritmo e prioridades de vida.`;
-    conselho = 'Conselho: aproveitem essa sintonia para decidir em conjunto, mas cuidado para não ficarem os dois "na mesma toca" — tragam também estímulos de fora da relação.';
+    texto = applyTemplate(overrides.textoMesmoGrupo || `{{nome1}} ({{cv1}}) e {{nome2}} ({{cv2}}) vibram no mesmo grupo energético — afinidade natural de ritmo e prioridades de vida.`, vars);
+    conselho = overrides.conselhoMesmoGrupo || 'Conselho: aproveitem essa sintonia para decidir em conjunto, mas cuidado para não ficarem os dois "na mesma toca" — tragam também estímulos de fora da relação.';
   } else {
-    texto = `${nome1} (${cv1}) e ${nome2} (${cv2}) trazem energias complementares mas diferentes — uma combinação com grande potencial de crescimento, que pede comunicação consciente para não se tornar em atrito.`;
-    conselho = 'Conselho: nas discordâncias, tentem nomear em voz alta a necessidade por trás da posição de cada um, antes de discutir soluções — normalmente é aí que mora o desencontro.';
+    texto = applyTemplate(overrides.textoComplementar || `{{nome1}} ({{cv1}}) e {{nome2}} ({{cv2}}) trazem energias complementares mas diferentes — uma combinação com grande potencial de crescimento, que pede comunicação consciente para não se tornar em atrito.`, vars);
+    conselho = overrides.conselhoComplementar || 'Conselho: nas discordâncias, tentem nomear em voz alta a necessidade por trás da posição de cada um, antes de discutir soluções — normalmente é aí que mora o desencontro.';
   }
-  return { texto, conselho, ritualCasal: 'Ritual para manter a energia estável: uma vez por semana, sentem-se os dois de mãos dadas, em silêncio, 3 minutos, respirando ao mesmo ritmo — antes de qualquer conversa difícil da semana.' };
+  return { texto, conselho, ritualCasal: overrides.ritualCasal || 'Ritual para manter a energia estável: uma vez por semana, sentem-se os dois de mãos dadas, em silêncio, 3 minutos, respirando ao mesmo ritmo — antes de qualquer conversa difícil da semana.' };
+}
+function compatibilidadeElemental(el1, el2, overrides){
+  overrides = overrides || {};
+  if (!el1 || !el2) return null;
+  const pares = [['Fogo','Ar'],['Terra','Água']];
+  const vars = { el1, el2 };
+  if (el1 === el2) return { nivel:'espelho', texto: applyTemplate(overrides.textoElementoEspelho || `Ambos de elemento {{el1}} — reconhecem-se com facilidade, mas tendem a amplificar um no outro tanto as qualidades como os excessos deste elemento.`, vars) };
+  if (pares.some(([a,b]) => (el1===a&&el2===b)||(el1===b&&el2===a))) return { nivel:'harmonioso', texto: applyTemplate(overrides.textoElementoHarmonioso || `{{el1}} e {{el2}} alimentam-se mutuamente de forma natural — uma combinação classicamente fluida.`, vars) };
+  return { nivel:'desafio fértil', texto: applyTemplate(overrides.textoElementoDesafio || `{{el1}} e {{el2}} são elementos que se desafiam um ao outro — pode gerar atrito, mas costuma ser também o tipo de combinação que mais cresce quando há vontade dos dois lados.`, vars) };
 }
 
 // Leitura reflexiva de vibração empresarial — nunca decide por ela, dá-lhe
 // as perguntas certas para avaliar se o nome/vibração serve o negócio.
-function avisoVibracaoEmpresa(cv, dons, denominacaoSocial){
-  let texto = `A vibração principal desta empresa (Caminho de Vida ${cv}) favorece naturalmente: ${dons[cv]||'construção e presença própria no mercado'}. Compare isto com a atividade real do negócio — se houver desencontro (ex: um número muito virado para introspeção/análise numa empresa que vive de vendas agressivas e visibilidade), é sinal de que vale a pena trabalhar a vibração.`;
-  texto += ' Formas comuns de ajustar a vibração sem mudar o nome legal: adotar um nome comercial/fantasia complementar, escolher datas numerologicamente favoráveis para lançamentos e assinaturas importantes, ou ajustar elementos visuais (logotipo, cores) que reforcem o número que falta.';
+function avisoVibracaoEmpresa(cv, dons, denominacaoSocial, overrides){
+  overrides = overrides || {};
+  const vars = { cv, dom: dons[cv]||'construção e presença própria no mercado' };
+  let texto = applyTemplate(overrides.textoVibracaoEmpresa || `A vibração principal desta empresa (Caminho de Vida {{cv}}) favorece naturalmente: {{dom}}. Compare isto com a atividade real do negócio — se houver desencontro (ex: um número muito virado para introspeção/análise numa empresa que vive de vendas agressivas e visibilidade), é sinal de que vale a pena trabalhar a vibração.`, vars);
+  texto += ' ' + (overrides.textoAjusteEmpresa || 'Formas comuns de ajustar a vibração sem mudar o nome legal: adotar um nome comercial/fantasia complementar, escolher datas numerologicamente favoráveis para lançamentos e assinaturas importantes, ou ajustar elementos visuais (logotipo, cores) que reforcem o número que falta.');
   if (denominacaoSocial){
-    texto += ` Nota: se a denominação social oficial for diferente do nome comercial usado no dia a dia, ambas as vibrações influenciam o negócio — vale a pena calcular as duas separadamente numa consulta de acompanhamento.`;
+    texto += ' ' + (overrides.textoDenominacaoSocial || 'Nota: se a denominação social oficial for diferente do nome comercial usado no dia a dia, ambas as vibrações influenciam o negócio — vale a pena calcular as duas separadamente numa consulta de acompanhamento.');
   }
   return texto;
 }
@@ -383,6 +428,7 @@ function generateFullResult(freeResult, extra, overrides){
     Object.fromEntries(Object.keys(CRISTAL_SIGNO).map(s => [s, bathAndMantraForSign(s)])),
     overrides.banhosSigno
   );
+  const PAPEL_RELACAO_M = mergeSimpleTable(PAPEL_RELACAO, overrides.papeisRelacao);
 
   const nome = freeResult.nome;
   const cv = freeResult.caminhoDeVida;
@@ -463,13 +509,17 @@ function generateFullResult(freeResult, extra, overrides){
         dom: DONS_M[e.caminhoDeVida] || ''
       })),
       vibracaoGrupo, vibracaoGrupoTexto: DONS_M[vibracaoGrupo] || '',
-      harmoniaTexto: freeResult.tipo === 'familia'
-        ? `A vibração conjunta desta família é ${vibracaoGrupo} — ${DONS_M[vibracaoGrupo]||'uma energia própria de grupo'}. Usem-na como "tema do ano" da casa: um objetivo ou qualidade que todos podem trabalhar juntos, cada um à sua maneira.`
-        : `A vibração conjunta desta equipa/sociedade é ${vibracaoGrupo} — ${DONS_M[vibracaoGrupo]||'uma energia própria de grupo'}. Vale a pena que as decisões estratégicas mais importantes tenham em conta este número, além da vibração individual de cada sócio.`
+      harmoniaTexto: applyTemplate(
+        (freeResult.tipo === 'familia' ? overrides.harmoniaFamilia : overrides.harmoniaEmpresa) ||
+        (freeResult.tipo === 'familia'
+          ? `A vibração conjunta desta família é {{v}} — {{dom}}. Usem-na como "tema do ano" da casa: um objetivo ou qualidade que todos podem trabalhar juntos, cada um à sua maneira.`
+          : `A vibração conjunta desta equipa/sociedade é {{v}} — {{dom}}. Vale a pena que as decisões estratégicas mais importantes tenham em conta este número, além da vibração individual de cada sócio.`),
+        { v: vibracaoGrupo, dom: DONS_M[vibracaoGrupo] || 'uma energia própria de grupo' }
+      )
     };
   }
   if (freeResult.tipo === 'empresa'){
-    result.avisoEmpresa = avisoVibracaoEmpresa(cv, DONS_M, extra?.denominacaoSocial);
+    result.avisoEmpresa = avisoVibracaoEmpresa(cv, DONS_M, extra?.denominacaoSocial, overrides.vibracaoEmpresa);
   }
   // Casal — leitura completa dos DOIS elementos, não só do primeiro.
   if (freeResult.tipo === 'casal' && extra?.pessoa2?.nome && extra?.pessoa2?.caminhoDeVida != null){
@@ -483,21 +533,21 @@ function generateFullResult(freeResult, extra, overrides){
 
     const perfil1 = {
       nome: nome1Curto, caminhoDeVida: cv,
-      dom: DONS_M[cv] || '', papelRelacao: PAPEL_RELACAO[cv] || '',
+      dom: DONS_M[cv] || '', papelRelacao: PAPEL_RELACAO_M[cv] || '',
       signo: signoNome, elemento: ELEMENTO_SIGNO_M[signoNome] || '', regente: REGENTE_SIGNO_M[signoNome] || '',
       luzRelacao: `Traz para a relação: ${DONS_M[cv]||'presença própria'}.`,
       sombraRelacao: `Ponto a vigiar como casal: quando a vibração de ${DONS_M[cv]||''} é levada ao extremo, tende a ${EXCESSO_M[cv]||'gerar desgaste'}`
     };
     const perfil2 = {
       nome: nome2Curto, caminhoDeVida: cv2,
-      dom: DONS_M[cv2] || '', papelRelacao: PAPEL_RELACAO[cv2] || '',
+      dom: DONS_M[cv2] || '', papelRelacao: PAPEL_RELACAO_M[cv2] || '',
       signo: signo2, elemento: ELEMENTO_SIGNO_M[signo2] || '', regente: REGENTE_SIGNO_M[signo2] || '',
       luzRelacao: `Traz para a relação: ${DONS_M[cv2]||'presença própria'}.`,
       sombraRelacao: `Ponto a vigiar como casal: quando a vibração de ${DONS_M[cv2]||''} é levada ao extremo, tende a ${EXCESSO_M[cv2]||'gerar desgaste'}`
     };
 
-    const compatNumero = compatibilidadeCasal(cv, cv2, nome1Curto, nome2Curto);
-    const compatElemento = compatibilidadeElemental(perfil1.elemento, perfil2.elemento);
+    const compatNumero = compatibilidadeCasal(cv, cv2, nome1Curto, nome2Curto, overrides.compatibilidadeCasal);
+    const compatElemento = compatibilidadeElemental(perfil1.elemento, perfil2.elemento, overrides.compatibilidadeCasal);
     const vibracaoCasal = reduceNumber(cv + cv2);
     const mediunidadeCasal = [cv, exp, mot, cv2, exp2, mot2].includes(11);
 
@@ -525,6 +575,9 @@ function generateFullResult(freeResult, extra, overrides){
   result.banhoErvas = banho.ervas;
   result.banhoModo = 'Ferva 2 litros de água, desligue o lume, deite as ervas indicadas, abafe 10 minutos, coe e verta do pescoço para baixo após a higiene regular.';
   result.avisoProfissional = 'Os banhos e orações acima são seguros para fazer em casa. Mas se o seu Mapa apontou sinais fortes (excesso energético marcante, lição cármica pesada, ou o sinal de mediunidade) — ou se sente que "algo mais" pesa sobre si (magia, olho gordo, larvas astrais, entidades) — isso exige uma avaliação e tratamento feitos por alguém com experiência e capacitação, nunca sozinho(a) em casa. Marque uma Consulta de Pesquisa Energética para uma avaliação completa e segura.';
+  if (freeResult.tipo === 'bebe'){
+    result.avisoBebe = 'Esta leitura é uma ferramenta espiritual de reflexão para os pais/cuidadores — não é um diagnóstico nem substitui o acompanhamento pediátrico, psicológico ou educativo da criança. Números e talentos naturais são sugestões de caminho, não rótulos: cada criança continua livre para surpreender para além do que qualquer número descreve.';
+  }
   result.planoAtivacao = `Dias 1-7: repita todas as manhãs a Oração de Conexão + a Afirmação EU SOU do seu número, e faça o Banho de Ervas do seu signo.\nDias 8-14: pratique 10 minutos de Reiki de autotratamento ou meditação com o mantra sugerido; faça o Banho de Descarrego (396Hz) numa noite de lua minguante, se possível.\nDias 15-21: faça o Banho de Proteção (963Hz) numa manhã antes de um dia importante, repita os 3 Decretos do EU SOU, e escreva 3 sinais de que a vibração de número ${cv} está mais presente na sua vida.`;
 
   return result;
@@ -572,7 +625,7 @@ exports.handler = async function (event) {
   }
 
   try {
-    const { action, tenantId, leadId, extra } = JSON.parse(event.body || '{}');
+    const { action, tenantId, leadId, extra, metodo } = JSON.parse(event.body || '{}');
     if (!tenantId) {
       return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Dados em falta.' }) };
     }
@@ -629,7 +682,7 @@ exports.handler = async function (event) {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      const sumupKey = process.env.SUMUP_API_KEY;
+      const sumupKey = metodo === 'mbway' ? null : process.env.SUMUP_API_KEY;
       const sumupMerchantCode = process.env.SUMUP_MERCHANT_CODE;
       const priceInfo = getEffectivePrice(tenant, lead.tipo || 'individual');
       const price = priceInfo.price;
