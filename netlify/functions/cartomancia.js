@@ -117,6 +117,28 @@ function tempoEstimado(carta){
   return `Tendência a concretizar-se em cerca de ${carta.valorNum} ${carta.unidadeTempo}.`;
 }
 
+// Sinais espirituais detetados no conjunto de cartas — cruza com o mesmo
+// serviço de Limpeza Energética já oferecido no Mapa da Alma. Nunca
+// afirma nada como certeza ("magia confirmada"), só assinala um padrão
+// que vale a pena investigar com mais profundidade (Pêndulo Hebreu).
+const CARTAS_BLOQUEIO = ['espadas:5','espadas:7','espadas:8','espadas:9','espadas:10','copas:4','copas:5','copas:8'];
+const CARTAS_FAVORAVEIS = ['ouros:A','ouros:3','ouros:6','ouros:8','ouros:9','ouros:10','copas:A','copas:9','copas:10'];
+function detetarSinais(cartas){
+  const chaves = cartas.map(c => `${c.naipeKey}:${c.valor}`);
+  const nBloqueio = chaves.filter(k => CARTAS_BLOQUEIO.includes(k)).length;
+  const nFavoravel = chaves.filter(k => CARTAS_FAVORAVEIS.includes(k)).length;
+  let avisoBloqueio = null, avisoFavoravel = null;
+  if (nBloqueio >= 2){
+    avisoBloqueio = 'O conjunto de cartas mostra várias energias densas juntas — um padrão que, em cartomancia, costuma levar-nos a investigar se há magia, olho gordo, inveja ou um "encosto" (energia/entidade agarrada) a pesar sobre a situação. Também pode ser sinal de um ritual feito (por si ou por outra pessoa) cujo retorno está agora a manifestar-se. Vale a pena aprofundar com uma Consulta de Pesquisa Energética.';
+  } else if (nBloqueio === 1){
+    avisoBloqueio = 'Há uma carta de energia mais densa nesta tiragem — não é motivo de alarme sozinha, mas se sentir que "algo mais" pesa sobre si, vale a pena confirmar com uma avaliação mais profunda.';
+  }
+  if (nFavoravel >= 2){
+    avisoFavoravel = 'Há uma boa concentração de cartas de crescimento e realização — energia favorável para novos projetos, para tudo o que estiver a nascer na sua vida (incluindo, se for o caso, fertilidade/gravidez).';
+  }
+  return { avisoBloqueio, avisoFavoravel };
+}
+
 const FOCO_TEXTO = {
   amor: 'no campo do amor e das relações',
   trabalho: 'no campo do trabalho e do dinheiro',
@@ -244,21 +266,24 @@ exports.handler = async function (event) {
       });
       const tendenciaGeral = interpretacaoIA || gerarTendenciaGeral(cartas, foco);
       const primeiraReflexao = interpretacaoIA ? tempoEstimado(cartas[cartas.length - 1]) : gerarPrimeiraReflexao(cartas);
+      const sinais = detetarSinais(cartas);
 
       const tenantSnap = await db.collection('tenants').doc(tenantId).get();
       const tenant = tenantSnap.exists ? tenantSnap.data() : {};
       const whatsapp = tenant?.onlineConsult?.whatsappNumber || null;
+      const limpezaTexto = tenant?.mapaAlmaSettings?.limpezaTexto || null;
+      const limpezaPrecoConsulta = tenant?.mapaAlmaSettings?.limpezaPrecoConsulta ?? 35;
 
       await db.collection('tenants').doc(tenantId).collection('cartomanciaLeads').doc(leadId).set({
         nome, dataNascimento: dataNascimento || null, contacto, foco: foco || 'momento', pergunta: pergunta || '',
         numCartas: n, cartas: cartas.map(c => ({ valor: c.valor, naipeKey: c.naipeKey, nomeCarta: c.nomeCarta })),
-        tendenciaGeral, primeiraReflexao, origem: 'publico', geradoComIA: !!interpretacaoIA,
+        tendenciaGeral, primeiraReflexao, sinais, origem: 'publico', geradoComIA: !!interpretacaoIA,
         createdAt: new Date().toISOString()
       });
 
       return {
         statusCode: 200, headers: cors,
-        body: JSON.stringify({ ok: true, leitura: { nome, foco, cartas, tendenciaGeral, primeiraReflexao, whatsapp } })
+        body: JSON.stringify({ ok: true, leitura: { nome, foco, cartas, tendenciaGeral, primeiraReflexao, sinais, whatsapp, limpezaTexto, limpezaPrecoConsulta } })
       };
     }
 
@@ -287,6 +312,7 @@ exports.handler = async function (event) {
       }));
       const bloqueios = cartas.filter(c => ['espadas'].includes(c.naipeKey) || ['5','7','9'].includes(c.valor))
         .map(c => `${c.nomeCarta}: ${c.significado}`);
+      const sinais = detetarSinais(cartas);
       const conselhoPratico = interpretacaoIA
         ? '(ver leitura completa acima, gerada com IA — já inclui o conselho prático)'
         : `Com base no conjunto, o passo mais direto agora é agir sobre a carta "${cartas[cartas.length-1]?.nomeCarta}" — ${cartas[cartas.length-1]?.significado}.`;
@@ -298,7 +324,7 @@ exports.handler = async function (event) {
         statusCode: 200, headers: cors,
         body: JSON.stringify({
           ok: true,
-          relatorio: { nome, foco, pergunta, cartas, leituraPorPosicao, tendenciaGeral, bloqueios, conselhoPratico, janelaTemporal, geradoComIA: !!interpretacaoIA }
+          relatorio: { nome, foco, pergunta, cartas, leituraPorPosicao, tendenciaGeral, bloqueios, sinais, conselhoPratico, janelaTemporal, geradoComIA: !!interpretacaoIA }
         })
       };
     }
