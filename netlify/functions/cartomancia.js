@@ -119,13 +119,35 @@ function tempoEstimado(carta){
 
 const FOCO_TEXTO = {
   amor: 'no campo do amor e das relações',
-  trabalho: 'no campo do trabalho e da vida profissional',
+  trabalho: 'no campo do trabalho e do dinheiro',
+  saude: 'sobre o seu bem-estar e energia física/emocional',
   decisao: 'sobre a decisão rápida que está a ponderar',
-  momento: 'sobre o momento presente da sua vida'
+  momento: 'sobre o momento presente da sua vida',
+  simnao: 'sobre a pergunta de sim ou não que fez',
+  geral: 'de forma geral, sobre a sua vida agora'
 };
+
+// Classificação tradicional sim/não/talvez por carta — usada só quando o
+// foco escolhido é "Sim ou Não". Cartas de tom claramente positivo (novo
+// começo, vitória, harmonia, realização) = sim; cartas de bloqueio, perda,
+// conflito ou fim doloroso = não; cartas de transição/escolha = talvez.
+const SIM_NAO = {
+  paus:    { A:'sim', 2:'talvez', 3:'sim', 4:'sim', 5:'talvez', 6:'sim', 7:'sim', 8:'sim', 9:'sim', 10:'não', J:'talvez', Q:'sim', K:'sim' },
+  copas:   { A:'sim', 2:'sim', 3:'sim', 4:'não', 5:'não', 6:'talvez', 7:'talvez', 8:'não', 9:'sim', 10:'sim', J:'talvez', Q:'sim', K:'sim' },
+  espadas: { A:'talvez', 2:'não', 3:'não', 4:'talvez', 5:'não', 6:'talvez', 7:'não', 8:'não', 9:'não', 10:'não', J:'talvez', Q:'talvez', K:'talvez' },
+  ouros:   { A:'sim', 2:'talvez', 3:'sim', 4:'talvez', 5:'não', 6:'sim', 7:'talvez', 8:'sim', 9:'sim', 10:'sim', J:'talvez', Q:'sim', K:'sim' }
+};
+function respostaSimNao(carta){
+  const resposta = SIM_NAO[carta.naipeKey]?.[carta.valor] || 'talvez';
+  const label = { sim: '✅ SIM', não: '❌ NÃO', talvez: '➖ TALVEZ / DEPENDE DE SI' }[resposta];
+  return { resposta, texto: `${label} — ${carta.nomeCarta}: ${carta.significado}` };
+}
 
 function gerarTendenciaGeral(cartas, foco){
   const focoTxt = FOCO_TEXTO[foco] || FOCO_TEXTO.momento;
+  if (foco === 'simnao' && cartas.length === 1){
+    return respostaSimNao(cartas[0]).texto;
+  }
   if (cartas.length === 1){
     return `A carta que saiu, ${cartas[0].nomeCarta}, fala de ${cartas[0].significado} — aplicado ${focoTxt}.`;
   }
@@ -136,6 +158,64 @@ function gerarTendenciaGeral(cartas, foco){
 function gerarPrimeiraReflexao(cartas){
   const ultima = cartas[cartas.length - 1];
   return `${tempoEstimado(ultima)} Isto é só a primeira camada — uma leitura completa cruza todas as cartas em conjunto, identifica bloqueios escondidos e dá um conselho prático passo a passo.`;
+}
+
+function calcularIdade(dataNascimento){
+  if (!dataNascimento) return null;
+  const nascimento = new Date(dataNascimento + 'T12:00:00');
+  if (isNaN(nascimento)) return null;
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - nascimento.getFullYear();
+  const aindaNaoFezAnos = (hoje.getMonth() < nascimento.getMonth()) ||
+    (hoje.getMonth() === nascimento.getMonth() && hoje.getDate() < nascimento.getDate());
+  if (aindaNaoFezAnos) idade--;
+  return idade;
+}
+
+// Escreve a leitura com a Gemini, na voz da Hikari Fafe, respondendo
+// diretamente à pergunta da pessoa com base nas cartas reais que saíram
+// (nunca inventa cartas novas). Se a GEMINI_API_KEY não estiver
+// configurada, ou a chamada falhar por qualquer motivo, devolve null e o
+// código chamador usa sempre o texto de regras já calculado como reserva
+// — nunca fica sem resposta por causa disto.
+async function gerarInterpretacaoIA({ nome, dataNascimento, pergunta, foco, cartas, tipoTiragem }){
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const idade = calcularIdade(dataNascimento);
+  const focoTxt = FOCO_TEXTO[foco] || FOCO_TEXTO.momento;
+  const cartasTexto = cartas.map((c, i) => `${i+1}. ${c.nomeCarta} — significado tradicional: ${c.significado}`).join('\n');
+  const instrucaoFoco = foco === 'simnao'
+    ? `\nIMPORTANTE: esta é uma leitura de SIM ou NÃO. Comece a resposta com "SIM", "NÃO" ou "TALVEZ / DEPENDE DE SI" em maiúsculas, com base no tom da carta (positiva=sim, bloqueada/negativa=não, ambígua=talvez), e só depois explique porquê.`
+    : foco === 'saude'
+      ? `\nNota: mantenha a leitura no plano simbólico/energético (energia, ânimo, autocuidado) — nunca fale de doenças, diagnósticos ou tratamentos médicos específicos, e termine sempre a lembrar que isto não substitui uma consulta médica.`
+      : '';
+
+  const prompt = `Você é a Hikari Fafe, terapeuta espiritual e cartomante em Portugal. Escreva a interpretação desta tiragem de cartas em português europeu, na primeira pessoa, como se fosse a própria Hikari a falar diretamente com a pessoa — tom caloroso, direto e prático, sem promessas absolutas (é sempre uma tendência/reflexão, nunca uma certeza).
+
+Cliente: ${nome}${idade != null ? ` (${idade} anos)` : ''}
+Pergunta/foco: ${pergunta ? `"${pergunta}"` : `sem pergunta específica, ${focoTxt}`}
+Tipo de tiragem: ${tipoTiragem}
+${instrucaoFoco}
+Cartas que saíram, pela ordem:
+${cartasTexto}
+
+Escreva SÓ com base nestas cartas e nos seus significados tradicionais — nunca invente outra carta. Responda diretamente à pergunta da pessoa, ligando as cartas entre si. Termine com um conselho prático e concreto para os próximos dias. Máximo 180 palavras, sem títulos nem marcadores, só texto corrido.`;
+
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    if (!res.ok) { console.error('Gemini falhou:', await res.text()); return null; }
+    const data = await res.json();
+    const texto = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    return texto ? texto.trim() : null;
+  } catch (e) {
+    console.error('Erro ao chamar a Gemini:', e);
+    return null;
+  }
 }
 
 exports.handler = async function (event) {
@@ -153,23 +233,26 @@ exports.handler = async function (event) {
     const db = admin.firestore();
 
     if (action === 'criarLeitura') {
-      const { leadId, nome, contacto, foco, pergunta, numCartas } = body;
+      const { leadId, nome, dataNascimento, contacto, foco, pergunta, numCartas } = body;
       if (!leadId || !nome || !contacto) {
         return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Dados em falta.' }) };
       }
       const n = numCartas === 1 ? 1 : 3;
       const cartas = tirarCartas(n);
-      const tendenciaGeral = gerarTendenciaGeral(cartas, foco);
-      const primeiraReflexao = gerarPrimeiraReflexao(cartas);
+      const interpretacaoIA = await gerarInterpretacaoIA({
+        nome, dataNascimento, pergunta, foco, cartas, tipoTiragem: n === 1 ? 'resposta rápida (1 carta)' : 'linha temporal (3 cartas)'
+      });
+      const tendenciaGeral = interpretacaoIA || gerarTendenciaGeral(cartas, foco);
+      const primeiraReflexao = interpretacaoIA ? tempoEstimado(cartas[cartas.length - 1]) : gerarPrimeiraReflexao(cartas);
 
       const tenantSnap = await db.collection('tenants').doc(tenantId).get();
       const tenant = tenantSnap.exists ? tenantSnap.data() : {};
       const whatsapp = tenant?.onlineConsult?.whatsappNumber || null;
 
       await db.collection('tenants').doc(tenantId).collection('cartomanciaLeads').doc(leadId).set({
-        nome, contacto, foco: foco || 'momento', pergunta: pergunta || '',
+        nome, dataNascimento: dataNascimento || null, contacto, foco: foco || 'momento', pergunta: pergunta || '',
         numCartas: n, cartas: cartas.map(c => ({ valor: c.valor, naipeKey: c.naipeKey, nomeCarta: c.nomeCarta })),
-        tendenciaGeral, primeiraReflexao, origem: 'publico',
+        tendenciaGeral, primeiraReflexao, origem: 'publico', geradoComIA: !!interpretacaoIA,
         createdAt: new Date().toISOString()
       });
 
@@ -183,25 +266,30 @@ exports.handler = async function (event) {
     // com o baralho físico) ou sorteio na app, com 1, 3 ou 5 cartas + uma
     // carta de tempo opcional. Devolve um relatório mais completo.
     if (action === 'gerarConsultaProfissional') {
-      const { nome, foco, pergunta, cartasEscolhidas, cartaTempo, sortear, numCartas } = body;
+      const { nome, dataNascimento, foco, pergunta, cartasEscolhidas, cartaTempo, sortear, numCartas } = body;
       let cartas;
       if (sortear) {
         cartas = tirarCartas(numCartas || 3);
       } else {
         cartas = (cartasEscolhidas || []).map(c => detalharCarta(c.valor, c.naipeKey));
       }
-      const tendenciaGeral = gerarTendenciaGeral(cartas, foco);
       const posicoes = cartas.length === 5
         ? ['Situação atual','Desafio/bloqueio','Passado recente','Futuro próximo','Conselho/resultado provável']
         : cartas.length === 3
           ? ['Passado','Presente','Futuro']
           : ['Resposta'];
+      const interpretacaoIA = await gerarInterpretacaoIA({
+        nome, dataNascimento, pergunta, foco, cartas, tipoTiragem: `${posicoes.join(' / ')}`
+      });
+      const tendenciaGeral = interpretacaoIA || gerarTendenciaGeral(cartas, foco);
       const leituraPorPosicao = cartas.map((c, i) => ({
         posicao: posicoes[i] || `Carta ${i+1}`, carta: c.nomeCarta, simbolo: c.simbolo, significado: c.significado
       }));
       const bloqueios = cartas.filter(c => ['espadas'].includes(c.naipeKey) || ['5','7','9'].includes(c.valor))
         .map(c => `${c.nomeCarta}: ${c.significado}`);
-      const conselhoPratico = `Com base no conjunto, o passo mais direto agora é agir sobre a carta "${cartas[cartas.length-1]?.nomeCarta}" — ${cartas[cartas.length-1]?.significado}.`;
+      const conselhoPratico = interpretacaoIA
+        ? '(ver leitura completa acima, gerada com IA — já inclui o conselho prático)'
+        : `Com base no conjunto, o passo mais direto agora é agir sobre a carta "${cartas[cartas.length-1]?.nomeCarta}" — ${cartas[cartas.length-1]?.significado}.`;
       let janelaTemporal = null;
       const cartaDeTempo = cartaTempo ? detalharCarta(cartaTempo.valor, cartaTempo.naipeKey) : null;
       if (cartaDeTempo) janelaTemporal = { carta: cartaDeTempo.nomeCarta, texto: tempoEstimado(cartaDeTempo) };
@@ -210,7 +298,7 @@ exports.handler = async function (event) {
         statusCode: 200, headers: cors,
         body: JSON.stringify({
           ok: true,
-          relatorio: { nome, foco, pergunta, cartas, leituraPorPosicao, tendenciaGeral, bloqueios, conselhoPratico, janelaTemporal }
+          relatorio: { nome, foco, pergunta, cartas, leituraPorPosicao, tendenciaGeral, bloqueios, conselhoPratico, janelaTemporal, geradoComIA: !!interpretacaoIA }
         })
       };
     }
