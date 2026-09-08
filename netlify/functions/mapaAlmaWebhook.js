@@ -71,7 +71,7 @@ exports.handler = async function (event) {
       return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, alreadyPaid: true }) };
     }
 
-    await leadRef.set({ paymentStatus: 'paid', paidAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    await leadRef.set({ paymentStatus: 'paid', paymentMethod: 'automatico', paidAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
 
     // Se houver uma promoção por número de pedidos ativa, conta este como usado.
     const tenantRef = db.collection('tenants').doc('hikari-terapias');
