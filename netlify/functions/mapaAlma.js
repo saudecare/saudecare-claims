@@ -315,6 +315,104 @@ async function loadOverrides(tenantId){
   }catch(e){ console.error('Falha ao carregar overrides:', e); return {}; }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// COMPATIBILIDADE DE CASAL, FAMÍLIA E EMPRESA — fonte e método
+// ═══════════════════════════════════════════════════════════════════════
+// Casal: segue a prática comum entre numerólogos lusófonos de comparar o
+// Caminho de Vida de cada elemento e somar os dois números, reduzindo-os
+// (respeitando Números Mestres), para obter a "vibração do casal enquanto
+// unidade" — o mesmo princípio de soma+redução usado em todo este método.
+// O agrupamento em 3 grupos (ativo/estável/emocional) é uma classificação
+// numerológica clássica: números 1-5-7 (ação/independência),
+// 2-4-8 (estabilidade/prática), 3-6-9 (emoção/criatividade) — usada aqui
+// para avaliar se dois números "falam a mesma língua" ou se são
+// complementares. A leitura de elementos astrológicos (Fogo/Terra/Ar/Água)
+// segue a compatibilidade clássica: Fogo+Ar e Terra+Água fluem bem; pares
+// do mesmo elemento espelham-se; as restantes combinações são descritas
+// como "desafio fértil", nunca como incompatibilidade definitiva — a
+// numerologia/astrologia são ferramentas de reflexão, não previsões
+// determinísticas, e a leitura deve refletir sempre essa cautela.
+//
+// Família: em vez de inventar um "número de harmonia familiar" isolado,
+// segue-se a mesma lógica de soma+redução de todos os Caminhos de Vida
+// dos elementos indicados, para chegar a uma "vibração de grupo" — uma
+// aproximação simples e defensável da abordagem sistémica usada por
+// numerólogos que leem famílias (que compara a Missão de Vida de cada
+// membro para identificar papéis e pontos de atrito no grupo).
+//
+// Empresa: segue a prática de numerologia empresarial de comparar a
+// vibração do nome comercial com o tipo de atividade do negócio, e de
+// sugerir ajustes não-destrutivos (nome fantasia complementar, datas
+// favoráveis para lançamentos, elementos visuais) em vez de recomendar
+// mudar o nome legal — mantendo a leitura sempre como ferramenta de
+// reflexão de apoio à decisão, nunca como garantia de resultado.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Arquétipo relacional por Caminho de Vida — o "papel" que cada número
+// tende a assumir dentro de uma relação a dois.
+const PAPEL_RELACAO = {
+  1:'o motor — inicia, decide, avança primeiro.', 2:'a ponte — traduz sentimentos, mantém a paz entre os dois.',
+  3:'a voz — leva alegria e leveza, comunica o que os dois sentem.', 4:'a base — organiza, dá estrutura ao dia a dia do casal.',
+  5:'o vento — traz mudança e novidade, tira a relação da rotina.', 6:'o cuidado — protege, nutre, mantém o lar.',
+  7:'a bússola — traz profundidade e reflexão à relação.', 8:'o motor estratégico — pensa o futuro material a longo prazo.',
+  9:'o coração generoso — perdoa fácil, sabe fechar ciclos.', 11:'o intuitivo — sente o que ainda não foi dito em voz alta.',
+  22:'o construtor — pensa grande para os dois, arquiteta o projeto de vida comum.', 33:'o cuidador incondicional — ama sem pedir nada em troca.'
+};
+
+// Agrupamento clássico de números para leitura de compatibilidade (casal) —
+// números do mesmo grupo tendem a "falar a mesma língua"; grupos vizinhos
+// são combinações com potencial mas que pedem mais comunicação consciente.
+const GRUPO_NUMERO = { 1:'ativo', 5:'ativo', 7:'ativo', 11:'ativo', 2:'estável', 4:'estável', 8:'estável', 22:'estável', 3:'emocional', 6:'emocional', 9:'emocional', 33:'emocional' };
+// Substitui {{chave}} num texto editável por um valor — usado para deixar
+// a Hikari editar as frases de compatibilidade sem tocar em código.
+function applyTemplate(tpl, vars){
+  return tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
+}
+
+function compatibilidadeCasal(cv1, cv2, nome1, nome2, overrides){
+  overrides = overrides || {};
+  const g1 = GRUPO_NUMERO[cv1] || 'estável';
+  const g2 = GRUPO_NUMERO[cv2] || 'estável';
+  const vars = { nome1, nome2, cv1, cv2 };
+  let texto, conselho, conhecerMelhor;
+  if (cv1 === cv2){
+    texto = applyTemplate(overrides.textoEspelho || `{{nome1}} e {{nome2}} partilham o mesmo Caminho de Vida ({{cv1}}) — um espelho vibracional. Entendem-se com facilidade, mas há risco de repetirem juntos os mesmos padrões e pontos cegos.`, vars);
+    conselho = overrides.conselhoEspelho || 'Conselho: procurem ativamente pontos de vista diferentes um do outro — convidem terceiros (amigos, terapeuta de casal) a dar perspetivas que nenhum dos dois consegue ver sozinho.';
+    conhecerMelhor = 'Pergunta para os dois: "Qual é o padrão que já reparaste que repetimos os dois, para o bem e para o mal?"';
+  } else if (g1 === g2){
+    texto = applyTemplate(overrides.textoMesmoGrupo || `{{nome1}} ({{cv1}}) e {{nome2}} ({{cv2}}) vibram no mesmo grupo energético — afinidade natural de ritmo e prioridades de vida.`, vars);
+    conselho = overrides.conselhoMesmoGrupo || 'Conselho: aproveitem essa sintonia para decidir em conjunto, mas cuidado para não ficarem os dois "na mesma toca" — tragam também estímulos de fora da relação.';
+    conhecerMelhor = 'Pergunta para os dois: "O que é que o outro faz de diferente de mim, mesmo sendo parecidos, que eu admiro?"';
+  } else {
+    texto = applyTemplate(overrides.textoComplementar || `{{nome1}} ({{cv1}}) e {{nome2}} ({{cv2}}) trazem energias complementares mas diferentes — uma combinação com grande potencial de crescimento, que pede comunicação consciente para não se tornar em atrito.`, vars);
+    conselho = overrides.conselhoComplementar || 'Conselho: nas discordâncias, tentem nomear em voz alta a necessidade por trás da posição de cada um, antes de discutir soluções — normalmente é aí que mora o desencontro.';
+    conhecerMelhor = 'Pergunta para os dois: "Do que precisas de mim quando as coisas ficam difíceis — mais espaço, ou mais presença?"';
+  }
+  return { texto, conselho, conhecerMelhor, ritualCasal: overrides.ritualCasal || 'Ritual para manter a energia estável: uma vez por semana, sentem-se os dois de mãos dadas, em silêncio, 3 minutos, respirando ao mesmo ritmo — antes de qualquer conversa difícil da semana.' };
+}
+function compatibilidadeElemental(el1, el2, overrides){
+  overrides = overrides || {};
+  if (!el1 || !el2) return null;
+  const pares = [['Fogo','Ar'],['Terra','Água']];
+  const vars = { el1, el2 };
+  if (el1 === el2) return { nivel:'espelho', texto: applyTemplate(overrides.textoElementoEspelho || `Ambos de elemento {{el1}} — reconhecem-se com facilidade, mas tendem a amplificar um no outro tanto as qualidades como os excessos deste elemento.`, vars) };
+  if (pares.some(([a,b]) => (el1===a&&el2===b)||(el1===b&&el2===a))) return { nivel:'harmonioso', texto: applyTemplate(overrides.textoElementoHarmonioso || `{{el1}} e {{el2}} alimentam-se mutuamente de forma natural — uma combinação classicamente fluida.`, vars) };
+  return { nivel:'desafio fértil', texto: applyTemplate(overrides.textoElementoDesafio || `{{el1}} e {{el2}} são elementos que se desafiam um ao outro — pode gerar atrito, mas costuma ser também o tipo de combinação que mais cresce quando há vontade dos dois lados.`, vars) };
+}
+
+// Leitura reflexiva de vibração empresarial — nunca decide por ela, dá-lhe
+// as perguntas certas para avaliar se o nome/vibração serve o negócio.
+function avisoVibracaoEmpresa(cv, dons, denominacaoSocial, overrides){
+  overrides = overrides || {};
+  const vars = { cv, dom: dons[cv]||'construção e presença própria no mercado' };
+  let texto = applyTemplate(overrides.textoVibracaoEmpresa || `A vibração principal desta empresa (Caminho de Vida {{cv}}) favorece naturalmente: {{dom}}. Compare isto com a atividade real do negócio — se houver desencontro (ex: um número muito virado para introspeção/análise numa empresa que vive de vendas agressivas e visibilidade), é sinal de que vale a pena trabalhar a vibração.`, vars);
+  texto += ' ' + (overrides.textoAjusteEmpresa || 'Formas comuns de ajustar a vibração sem mudar o nome legal: adotar um nome comercial/fantasia complementar, escolher datas numerologicamente favoráveis para lançamentos e assinaturas importantes, ou ajustar elementos visuais (logotipo, cores) que reforcem o número que falta.');
+  if (denominacaoSocial){
+    texto += ' ' + (overrides.textoDenominacaoSocial || 'Nota: se a denominação social oficial for diferente do nome comercial usado no dia a dia, ambas as vibrações influenciam o negócio — vale a pena calcular as duas separadamente numa consulta de acompanhamento.');
+  }
+  return texto;
+}
+
 function generateFullResult(freeResult, extra, overrides){
   overrides = overrides || {};
   const DONS_M = mergeSimpleTable(DONS, overrides.dons);
@@ -333,6 +431,7 @@ function generateFullResult(freeResult, extra, overrides){
     Object.fromEntries(Object.keys(CRISTAL_SIGNO).map(s => [s, bathAndMantraForSign(s)])),
     overrides.banhosSigno
   );
+  const PAPEL_RELACAO_M = mergeSimpleTable(PAPEL_RELACAO, overrides.papeisRelacao);
 
   const nome = freeResult.nome;
   const cv = freeResult.caminhoDeVida;
@@ -389,11 +488,116 @@ function generateFullResult(freeResult, extra, overrides){
     result.vibMatricula = vibracaoMista(extra.matricula);
     result.vibMatriculaTexto = VIB_M[result.vibMatricula] || 'vibração equilibrada.';
   }
+  // Empresa — vários contactos/matrículas em vez de um só.
+  if (Array.isArray(extra?.telemovelLista) && extra.telemovelLista.length){
+    result.vibContactos = extra.telemovelLista.map(numero => {
+      const v = vibracaoMista(numero);
+      return { numero, vibracao: v, texto: VIB_M[v] || 'vibração equilibrada.' };
+    });
+  }
+  if (Array.isArray(extra?.matriculaLista) && extra.matriculaLista.length){
+    result.vibFrota = extra.matriculaLista.map(matricula => {
+      const v = vibracaoMista(matricula);
+      return { matricula, vibracao: v, texto: VIB_M[v] || 'vibração equilibrada.' };
+    });
+  }
+  // Família/Empresa — leitura mini de cada elemento extra + harmonia de grupo.
+  if ((freeResult.tipo === 'familia' || freeResult.tipo === 'empresa') && Array.isArray(extra?.elementosExtra) && extra.elementosExtra.length){
+    const todosCv = [cv, ...extra.elementosExtra.map(e => e.caminhoDeVida)];
+    const vibracaoGrupo = reduceNumber(todosCv.reduce((a,n) => a+n, 0));
+    result.grupo = {
+      elementos: extra.elementosExtra.map(e => ({
+        nome: e.nome, caminhoDeVida: e.caminhoDeVida, signo: e.signo,
+        elemento: ELEMENTO_SIGNO_M[e.signo] || '', regente: REGENTE_SIGNO_M[e.signo] || '',
+        dom: DONS_M[e.caminhoDeVida] || ''
+      })),
+      vibracaoGrupo, vibracaoGrupoTexto: DONS_M[vibracaoGrupo] || '',
+      harmoniaTexto: applyTemplate(
+        (freeResult.tipo === 'familia' ? overrides.harmoniaFamilia : overrides.harmoniaEmpresa) ||
+        (freeResult.tipo === 'familia'
+          ? `A vibração conjunta desta família é {{v}} — {{dom}}. Usem-na como "tema do ano" da casa: um objetivo ou qualidade que todos podem trabalhar juntos, cada um à sua maneira.`
+          : `A vibração conjunta desta equipa/sociedade é {{v}} — {{dom}}. Vale a pena que as decisões estratégicas mais importantes tenham em conta este número, além da vibração individual de cada sócio.`),
+        { v: vibracaoGrupo, dom: DONS_M[vibracaoGrupo] || 'uma energia própria de grupo' }
+      )
+    };
+  }
+  if (freeResult.tipo === 'empresa'){
+    result.avisoEmpresa = avisoVibracaoEmpresa(cv, DONS_M, extra?.denominacaoSocial, overrides.vibracaoEmpresa);
+  }
+  // Casal — leitura completa dos DOIS elementos, não só do primeiro.
+  if (freeResult.tipo === 'casal' && extra?.pessoa2?.nome && extra?.pessoa2?.caminhoDeVida != null){
+    const p2 = extra.pessoa2;
+    const cv2 = p2.caminhoDeVida;
+    const exp2 = expressao(p2.nome);
+    const mot2 = motivacao(p2.nome);
+    const signo2 = p2.signo;
+    const nome1Curto = primeiroNome || nome;
+    const nome2Curto = (p2.nome||'').trim().split(/\s+/)[0] || p2.nome;
+
+    const perfil1 = {
+      nome: nome1Curto, caminhoDeVida: cv, expressao: exp, motivacao: mot,
+      dom: DONS_M[cv] || '', papelRelacao: PAPEL_RELACAO_M[cv] || '',
+      signo: signoNome, elemento: ELEMENTO_SIGNO_M[signoNome] || '', regente: REGENTE_SIGNO_M[signoNome] || '',
+      cristalSigno: CRISTAL_SIGNO_M[signoNome] || '', chakraInfo: CHAKRA_M[freeResult.diaInfo?.chakra] || null,
+      mantra: (BANHOS_SIGNO_M[signoNome] || bathAndMantraForSign(signoNome)).mantra,
+      banhoErvas: (BANHOS_SIGNO_M[signoNome] || bathAndMantraForSign(signoNome)).ervas,
+      euSou: EU_SOU_M[cv] || '',
+      luzIndividual: `Talento natural para ${DONS_M[cv]||'liderar a própria vida'}, reforçado pela Expressão ${exp} (${DONS_M[exp]||'expressão própria'}).`,
+      sombraIndividual: `Risco de excesso ligado ao número ${cv} — vigie sinais de desgaste quando a vibração de ${DONS_M[cv]||''} for levada ao extremo.`,
+      luzRelacao: `Traz para a relação: ${DONS_M[cv]||'presença própria'}.`,
+      sombraRelacao: `Ponto a vigiar como casal: quando a vibração de ${DONS_M[cv]||''} é levada ao extremo, tende a ${EXCESSO_M[cv]||'gerar desgaste'}`
+    };
+    const perfil2 = {
+      nome: nome2Curto, caminhoDeVida: cv2, expressao: exp2, motivacao: mot2,
+      dom: DONS_M[cv2] || '', papelRelacao: PAPEL_RELACAO_M[cv2] || '',
+      signo: signo2, elemento: ELEMENTO_SIGNO_M[signo2] || '', regente: REGENTE_SIGNO_M[signo2] || '',
+      cristalSigno: CRISTAL_SIGNO_M[signo2] || '', chakraInfo: CHAKRA_M[p2.diaInfo?.chakra] || null,
+      mantra: (BANHOS_SIGNO_M[signo2] || bathAndMantraForSign(signo2)).mantra,
+      banhoErvas: (BANHOS_SIGNO_M[signo2] || bathAndMantraForSign(signo2)).ervas,
+      euSou: EU_SOU_M[cv2] || '',
+      luzIndividual: `Talento natural para ${DONS_M[cv2]||'liderar a própria vida'}, reforçado pela Expressão ${exp2} (${DONS_M[exp2]||'expressão própria'}).`,
+      sombraIndividual: `Risco de excesso ligado ao número ${cv2} — vigie sinais de desgaste quando a vibração de ${DONS_M[cv2]||''} for levada ao extremo.`,
+      luzRelacao: `Traz para a relação: ${DONS_M[cv2]||'presença própria'}.`,
+      sombraRelacao: `Ponto a vigiar como casal: quando a vibração de ${DONS_M[cv2]||''} é levada ao extremo, tende a ${EXCESSO_M[cv2]||'gerar desgaste'}`
+    };
+
+    const compatNumero = compatibilidadeCasal(cv, cv2, nome1Curto, nome2Curto, overrides.compatibilidadeCasal);
+    const compatElemento = compatibilidadeElemental(perfil1.elemento, perfil2.elemento, overrides.compatibilidadeCasal);
+    const vibracaoCasal = reduceNumber(cv + cv2);
+    const mediunidadeCasal = [cv, exp, mot, cv2, exp2, mot2].includes(11);
+
+    let moradaConjunta = null;
+    if (extra?.morada){
+      const vMorada = vibracaoMista(extra.morada);
+      moradaConjunta = { vibracao: vMorada, texto: VIB_M[vMorada] || 'vibração equilibrada.',
+        combinaBem: [perfil1.caminhoDeVida, perfil2.caminhoDeVida, vibracaoCasal].includes(vMorada) };
+    }
+
+    result.casal = {
+      perfil1, perfil2,
+      cvParceiro: cv2,
+      compatNumero, compatElemento,
+      vibracaoCasal, vibracaoCasalTexto: DONS_M[vibracaoCasal] || '',
+      mediunidadeCasal,
+      moradaConjunta,
+      ajusteEnergia: `Para afinar a energia dos dois: repitam juntos, em voz alta, "EU SOU ${DONS_M[vibracaoCasal]||'um só propósito, em dois corpos'}" — a afirmação combinada da vossa vibração de casal (${vibracaoCasal}). Usem esta frase antes de conversas importantes ou decisões de peso, para se alinharem antes de falar.`
+    };
+    // Mantém o campo antigo (compatibilidade simples) por compatibilidade
+    // com PDFs/telas mais antigas, agora enriquecido.
+    result.casalCompatibilidade = { cvParceiro: cv2, ...compatNumero };
+  }
   const banho = BANHOS_SIGNO_M[signoNome] || bathAndMantraForSign(signoNome);
   result.banhoErvas = banho.ervas;
   result.banhoModo = 'Ferva 2 litros de água, desligue o lume, deite as ervas indicadas, abafe 10 minutos, coe e verta do pescoço para baixo após a higiene regular.';
   result.avisoProfissional = 'Os banhos e orações acima são seguros para fazer em casa. Mas se o seu Mapa apontou sinais fortes (excesso energético marcante, lição cármica pesada, ou o sinal de mediunidade) — ou se sente que "algo mais" pesa sobre si (magia, olho gordo, larvas astrais, entidades) — isso exige uma avaliação e tratamento feitos por alguém com experiência e capacitação, nunca sozinho(a) em casa. Marque uma Consulta de Pesquisa Energética para uma avaliação completa e segura.';
+  if (freeResult.tipo === 'bebe'){
+    result.avisoBebe = 'Esta leitura é uma ferramenta espiritual de reflexão para os pais/cuidadores — não é um diagnóstico nem substitui o acompanhamento pediátrico, psicológico ou educativo da criança. Números e talentos naturais são sugestões de caminho, não rótulos: cada criança continua livre para surpreender para além do que qualquer número descreve.';
+  }
   result.planoAtivacao = `Dias 1-7: repita todas as manhãs a Oração de Conexão + a Afirmação EU SOU do seu número, e faça o Banho de Ervas do seu signo.\nDias 8-14: pratique 10 minutos de Reiki de autotratamento ou meditação com o mantra sugerido; faça o Banho de Descarrego (396Hz) numa noite de lua minguante, se possível.\nDias 15-21: faça o Banho de Proteção (963Hz) numa manhã antes de um dia importante, repita os 3 Decretos do EU SOU, e escreva 3 sinais de que a vibração de número ${cv} está mais presente na sua vida.`;
+  if (freeResult.tipo === 'casal' && result.casal){
+    const vc = result.casal.vibracaoCasal;
+    result.planoAtivacao = `Dias 1-7: cada um faz sozinho a sua Oração de Conexão + a sua Afirmação EU SOU pela manhã; à noite, façam juntos o ritual de mãos dadas em silêncio (3 minutos).\nDias 8-14: escolham uma noite para fazer, os dois, o Banho de Ervas — cada um usa o do seu próprio signo, ao mesmo tempo, no mesmo espaço.\nDias 15-21: repitam juntos, em voz alta, a afirmação combinada do casal (vibração ${vc}), e conversem sobre 3 sinais de que a energia dos dois está mais estável esta semana.`;
+  }
 
   return result;
 }
@@ -440,7 +644,7 @@ exports.handler = async function (event) {
   }
 
   try {
-    const { action, tenantId, leadId, extra } = JSON.parse(event.body || '{}');
+    const { action, tenantId, leadId, extra, metodo } = JSON.parse(event.body || '{}');
     if (!tenantId) {
       return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Dados em falta.' }) };
     }
@@ -457,7 +661,9 @@ exports.handler = async function (event) {
           socialLinks: tenant?.socialLinks || {},
           limpezaTexto: tenant?.mapaAlmaSettings?.limpezaTexto || null,
           limpezaPrecoConsulta: tenant?.mapaAlmaSettings?.limpezaPrecoConsulta ?? 35,
-          whatsapp: tenant?.onlineConsult?.whatsappNumber || null
+          whatsapp: tenant?.onlineConsult?.whatsappNumber || null,
+          mapaAlmaVisivel: tenant?.mapaAlmaSettings?.visivelNaPagina !== false,
+          cartomanciaVisivel: tenant?.cartomanciaSettings?.visivelNaPagina !== false
         })
       };
     }
@@ -497,7 +703,7 @@ exports.handler = async function (event) {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      const sumupKey = process.env.SUMUP_API_KEY;
+      const sumupKey = metodo === 'mbway' ? null : process.env.SUMUP_API_KEY;
       const sumupMerchantCode = process.env.SUMUP_MERCHANT_CODE;
       const priceInfo = getEffectivePrice(tenant, lead.tipo || 'individual');
       const price = priceInfo.price;
@@ -537,6 +743,24 @@ exports.handler = async function (event) {
       await leadRef.update({ paymentStatus: 'manual_pending', chargedPrice: price });
       const mapaSettings = tenant?.mapaAlmaSettings || {};
       const refCode = 'MA-' + leadId.slice(0, 6).toUpperCase();
+
+      // Avisa a Hikari por email, se tiver um email configurado para isso
+      // e a Resend estiver ligada — nunca bloqueia a resposta ao cliente
+      // se isto falhar (é só um aviso extra).
+      const notifContacto = mapaSettings.notificacaoContacto;
+      if (notifContacto && notifContacto.includes('@') && process.env.RESEND_API_KEY) {
+        fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: 'Vindora <onboarding@resend.dev>',
+            to: [notifContacto],
+            subject: `🔮 Novo pedido de Mapa da Alma — ${lead.nome || 'sem nome'}`,
+            html: `<p>Novo pedido a aguardar pagamento por MB Way/transferência.</p><p><strong>${lead.nome || ''}</strong> — ${price}€ — referência ${refCode}</p><p>Confirme no seu painel, na secção Mapa da Alma → Pedidos.</p>`
+          })
+        }).catch(e => console.error('Falha ao enviar aviso por email:', e));
+      }
+
       return {
         statusCode: 200, headers: cors,
         body: JSON.stringify({
