@@ -18,7 +18,16 @@ async function getAccessToken(refreshToken) {
     }),
   });
   const data = await res.json();
-  return data.access_token;
+  if (!res.ok || !data.access_token) {
+    // Regista sempre a razão real (ex: invalid_grant = a ligação foi
+    // revogada/expirou e tem de voltar a ligar a conta) em vez de um
+    // "falhou" genérico que não ajuda ninguém a perceber o que fazer.
+    console.error('Falha ao renovar o acesso ao Google Calendar:', JSON.stringify(data));
+    return { accessToken: null, error: data.error === 'invalid_grant'
+      ? 'A ligação ao Google Calendar expirou ou foi revogada — precisa de a voltar a ligar em Perfil → Google Calendar.'
+      : (data.error_description || data.error || 'Não foi possível renovar o acesso ao Google Calendar.') };
+  }
+  return { accessToken: data.access_token, error: null };
 }
 
 exports.handler = async function (event) {
@@ -38,7 +47,7 @@ exports.handler = async function (event) {
     if (!idToken) return { statusCode: 401, headers: cors, body: JSON.stringify({ error: 'Sem token de autenticação.' }) };
     const decoded = await admin.auth().verifyIdToken(idToken);
 
-    const { tenantId, action, googleEventId, summary, description, location, startISO, endISO } = JSON.parse(event.body || '{}');
+    const { tenantId, action, googleEventId, summary, description, location, startISO, endISO, timeZone } = JSON.parse(event.body || '{}');
 
     if (decoded.tenantId !== tenantId) {
       return { statusCode: 403, headers: cors, body: JSON.stringify({ error: 'Sem permissão.' }) };
@@ -50,9 +59,9 @@ exports.handler = async function (event) {
       return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, skipped: 'not_connected' }) };
     }
 
-    const accessToken = await getAccessToken(refreshToken);
+    const { accessToken, error: tokenError } = await getAccessToken(refreshToken);
     if (!accessToken) {
-      return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: false, error: 'Não foi possível renovar o acesso ao Google Calendar.' }) };
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: false, error: tokenError || 'Não foi possível renovar o acesso ao Google Calendar.' }) };
     }
 
     const base = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
@@ -76,8 +85,8 @@ exports.handler = async function (event) {
 
     const body = {
       summary, description, location,
-      start: { dateTime: startISO },
-      end: { dateTime: endISO },
+      start: { dateTime: startISO, timeZone: timeZone || 'Europe/Lisbon' },
+      end: { dateTime: endISO, timeZone: timeZone || 'Europe/Lisbon' },
     };
 
     let res;
@@ -95,11 +104,14 @@ exports.handler = async function (event) {
       });
     }
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || 'Falha ao sincronizar.');
+    if (!res.ok) {
+      console.error('A Google recusou criar/atualizar o evento:', res.status, JSON.stringify(data));
+      return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: false, error: data.error?.message || 'A Google recusou o pedido.' }) };
+    }
 
     return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, googleEventId: data.id }) };
   } catch (err) {
     console.error(err);
-    return { statusCode: 500, headers: cors, body: JSON.stringify({ error: 'Falha ao sincronizar com o Google Calendar.' }) };
+    return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: false, error: 'Falha inesperada ao sincronizar com o Google Calendar.' }) };
   }
 };
